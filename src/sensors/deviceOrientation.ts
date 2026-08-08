@@ -7,6 +7,12 @@ const EVENT_LOG_INTERVAL_MS = 1000;
 export interface HeadingData {
   headingDeg: number | null;
   absolute: boolean;
+  /**
+   * iOS `webkitCompassAccuracy` in degrees of error; null when the platform
+   * does not report it (e.g. Android). Degrades while the magnetometer
+   * re-calibrates — notably right after the app returns from another app.
+   */
+  accuracyDeg: number | null;
 }
 
 export interface DeviceOrientationEventLike {
@@ -119,6 +125,8 @@ export class HeadingTracker {
   start(onHeading: (heading: HeadingData) => void): () => void {
     let lastLogAt = 0;
     const listener = (event: DeviceOrientationEventLike) => {
+      const accuracyDeg =
+        typeof event.webkitCompassAccuracy === 'number' ? event.webkitCompassAccuracy : null;
       let heading: HeadingData;
       let source: 'webkitCompassHeading' | 'alpha' | 'none';
       const webkitHeading = event.webkitCompassHeading;
@@ -128,16 +136,17 @@ export class HeadingTracker {
         // event.absolute === false on deviceorientation events, so the flag
         // must not gate this value.
         source = 'webkitCompassHeading';
-        heading = { headingDeg: normalizeDeg(webkitHeading), absolute: true };
+        heading = { headingDeg: normalizeDeg(webkitHeading), absolute: true, accuracyDeg };
       } else if (typeof event.alpha === 'number') {
         source = 'alpha';
         heading = {
           headingDeg: compassHeading(event.alpha, this.screenAngle(), event.absolute),
           absolute: event.absolute,
+          accuracyDeg,
         };
       } else {
         source = 'none';
-        heading = { headingDeg: null, absolute: event.absolute };
+        heading = { headingDeg: null, absolute: event.absolute, accuracyDeg };
       }
       lastLogAt = logEventThrottled(lastLogAt, source, event, heading);
       onHeading(heading);

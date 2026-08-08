@@ -22,6 +22,17 @@ const AR_START_TIMEOUT_MS = 30_000;
 const AR_LOG_PREFIX = '[eclipse-checker:ar]';
 /** Heading events fire at display rate; sample the debug log. */
 const HEADING_LOG_INTERVAL_MS = 1000;
+/**
+ * iOS reports `webkitCompassAccuracy` in degrees of error. Above this limit the
+ * heading is unreliable (the magnetometer is re-calibrating — typically right
+ * after the app returns from being backgrounded), so the fix is not trusted.
+ */
+const COMPASS_ACCURACY_LIMIT_DEG = 15;
+
+function accuracyOk(accuracyDeg: number | null): boolean {
+  // Android reports no accuracy, so nothing to gate on.
+  return accuracyDeg === null || accuracyDeg <= COMPASS_ACCURACY_LIMIT_DEG;
+}
 
 type CompassState = 'requesting' | 'waiting' | 'aligned' | 'denied';
 
@@ -171,6 +182,18 @@ export function ARView({
     let stopHeading: (() => void) | null = null;
     const heading = new HeadingTracker(source);
 
+    // An app switch stops deviceorientation events while backgrounded. When the
+    // app comes back the magnetometer is usually mid-recalibration, so the
+    // first fix can be off. Drop the smoothed fix and snap to a fresh,
+    // accuracy-gated reading instead of EMA-blending a stale bias in.
+    const onResume = () => {
+      if (document.visibilityState === 'visible' && headingDegRef.current !== null) {
+        console.info(AR_LOG_PREFIX, 'app foregrounded; re-anchoring compass');
+        headingDegRef.current = null;
+      }
+    };
+    document.addEventListener('visibilitychange', onResume);
+
     const run = async () => {
       try {
         if (!(await hasCamera(window))) {
@@ -191,13 +214,19 @@ export function ARView({
         sceneCamera = xrScene.camera as SkyCameraLike;
 
         let lastHeadingLogAt = 0;
-        stopHeading = heading.start(({ headingDeg, absolute }) => {
+        stopHeading = heading.start(({ headingDeg, absolute, accuracyDeg }) => {
           const now = Date.now();
-          if (absolute && headingDeg !== null) {
+          if (absolute && headingDeg !== null && accuracyOk(accuracyDeg)) {
             if (headingDegRef.current === null) {
-              console.info(AR_LOG_PREFIX, `heading fix acquired: ${headingDeg.toFixed(1)}°`);
+              console.info(
+                AR_LOG_PREFIX,
+                `heading fix acquired: ${headingDeg.toFixed(1)}° (accuracy ${String(accuracyDeg)})`,
+              );
             } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
-              console.debug(AR_LOG_PREFIX, `heading fix: ${headingDeg.toFixed(1)}°`);
+              console.debug(
+                AR_LOG_PREFIX,
+                `heading fix: ${headingDeg.toFixed(1)}° (accuracy ${String(accuracyDeg)})`,
+              );
             }
             lastHeadingLogAt = now;
             // Smooth magnetometer jitter so the sun doesn't jump around while
@@ -208,7 +237,9 @@ export function ARView({
             lastHeadingLogAt = now;
             console.debug(
               AR_LOG_PREFIX,
-              `ignoring heading event (absolute=${String(absolute)}, headingDeg=${String(headingDeg)})`,
+              `ignoring heading event (absolute=${String(absolute)}, headingDeg=${String(
+                headingDeg,
+              )}, accuracy=${String(accuracyDeg)})`,
             );
           }
         });
@@ -281,6 +312,7 @@ export function ARView({
 
     return () => {
       disposed = true;
+      document.removeEventListener('visibilitychange', onResume);
       cancelAnimationFrame(raf);
       stopHeading?.();
       overlay?.dispose();

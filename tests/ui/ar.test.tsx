@@ -237,6 +237,76 @@ describe('ARView (8th Wall engine)', () => {
     await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
   });
 
+  it('ignores a heading with poor webkitCompassAccuracy (e.g. right after an app switch)', async () => {
+    const { orientation, sky } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+    });
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+
+    const sun = sky.scene.children[0];
+    const xBefore = sun.position.x;
+    const zBefore = sun.position.z;
+
+    // A re-calibrating magnetometer reports a far-off heading with degraded
+    // accuracy; it must not drag the sun away from the world-anchored ring.
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 180,
+      webkitCompassAccuracy: 40,
+    });
+
+    expect(sun.position.x).toBeCloseTo(xBefore, 6);
+    expect(sun.position.z).toBeCloseTo(zBefore, 6);
+    expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument();
+  });
+
+  it('snaps to a fresh heading instead of blending when the app returns to foreground', async () => {
+    const { orientation, sky } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+    });
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+
+    // App switch: background and come back. The smoothed fix is dropped so the
+    // next good event snaps instead of EMA-blending a stale bias in.
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 100,
+    });
+
+    const sun = sky.scene.children[0];
+    const az = (280 - 100) * (Math.PI / 180);
+    const alt = 7 * (Math.PI / 180);
+    await waitFor(() => {
+      expect(sun.position.x).toBeCloseTo(Math.sin(az) * Math.cos(alt) * SUN_DISTANCE, 4);
+      expect(sun.position.z).toBeCloseTo(-Math.cos(az) * Math.cos(alt) * SUN_DISTANCE, 4);
+    });
+  });
+
   it('recalibrate clears the fix and re-aligns on the next heading event', async () => {
     const { orientation } = renderActive();
     const section = document.querySelector('.ar-view');

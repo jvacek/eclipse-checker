@@ -3,7 +3,11 @@ import { useEffect, useState } from 'react';
 import { HeadingTracker, type HeadingData } from '../sensors';
 
 export function useHeading(screenAngle: () => number = defaultScreenAngle): HeadingData {
-  const [heading, setHeading] = useState<HeadingData>({ headingDeg: null, absolute: true });
+  const [heading, setHeading] = useState<HeadingData>({
+    headingDeg: null,
+    absolute: true,
+    accuracyDeg: null,
+  });
 
   useEffect(() => {
     if (typeof window === 'undefined') {

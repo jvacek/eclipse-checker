@@ -56,7 +56,11 @@ describe('HeadingTracker', () => {
     const stop = tracker.start(onHeading);
 
     source.listeners[0]({ alpha: 45, beta: 0, gamma: 0, absolute: true });
-    expect(onHeading).toHaveBeenLastCalledWith({ headingDeg: 225, absolute: true });
+    expect(onHeading).toHaveBeenLastCalledWith({
+      headingDeg: 225,
+      absolute: true,
+      accuracyDeg: null,
+    });
 
     stop();
     expect(source.listeners).toHaveLength(0);
@@ -69,7 +73,11 @@ describe('HeadingTracker', () => {
     tracker.start(onHeading);
 
     source.listeners[0]({ alpha: 99, beta: 0, gamma: 0, absolute: true, webkitCompassHeading: 44 });
-    expect(onHeading).toHaveBeenLastCalledWith({ headingDeg: 44, absolute: true });
+    expect(onHeading).toHaveBeenLastCalledWith({
+      headingDeg: 44,
+      absolute: true,
+      accuracyDeg: null,
+    });
   });
 
   it('treats webkitCompassHeading as absolute even though iOS reports absolute: false', () => {
@@ -87,7 +95,32 @@ describe('HeadingTracker', () => {
       absolute: false,
       webkitCompassHeading: 44,
     });
-    expect(onHeading).toHaveBeenLastCalledWith({ headingDeg: 44, absolute: true });
+    expect(onHeading).toHaveBeenLastCalledWith({
+      headingDeg: 44,
+      absolute: true,
+      accuracyDeg: null,
+    });
+  });
+
+  it('forwards webkitCompassAccuracy when iOS reports it', () => {
+    const source = makeSource();
+    const tracker = new HeadingTracker(source);
+    const onHeading = vi.fn();
+    tracker.start(onHeading);
+
+    source.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: 44,
+      webkitCompassAccuracy: 40,
+    });
+    expect(onHeading).toHaveBeenLastCalledWith({
+      headingDeg: 44,
+      absolute: true,
+      accuracyDeg: 40,
+    });
   });
 
   it('ignores a non-finite webkitCompassHeading and falls back to alpha', () => {
@@ -103,7 +136,11 @@ describe('HeadingTracker', () => {
       absolute: true,
       webkitCompassHeading: Number.NaN,
     });
-    expect(onHeading).toHaveBeenLastCalledWith({ headingDeg: 270, absolute: true });
+    expect(onHeading).toHaveBeenLastCalledWith({
+      headingDeg: 270,
+      absolute: true,
+      accuracyDeg: null,
+    });
   });
 
   it('emits null heading when alpha is unavailable', () => {
@@ -113,7 +150,11 @@ describe('HeadingTracker', () => {
     tracker.start(onHeading);
 
     source.listeners[0]({ alpha: null, beta: 0, gamma: 0, absolute: true });
-    expect(onHeading).toHaveBeenLastCalledWith({ headingDeg: null, absolute: true });
+    expect(onHeading).toHaveBeenLastCalledWith({
+      headingDeg: null,
+      absolute: true,
+      accuracyDeg: null,
+    });
   });
 });
 

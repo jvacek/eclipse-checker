@@ -316,6 +316,58 @@ describe('ARView (8th Wall engine)', () => {
     await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
   });
 
+  it('restores the canvas under the section when FullWindowCanvas moved it to the body', async () => {
+    // XRExtras' FullWindowCanvas reparents the canvas into document.body on
+    // attach and never moves it back on detach. Exiting must restore it under
+    // the section, otherwise the frozen last AR frame stays pinned over the
+    // results view after ARView unmounts.
+    const sky = makeSkyScene();
+    const { engine } = makeFakeEngine();
+    render(
+      <ARView
+        view={makeView()}
+        onExit={() => undefined}
+        loadEngine={() => Promise.resolve(engine)}
+        createSession={() => ({ start: () => Promise.resolve(sky), stop: vi.fn() })}
+      />,
+    );
+    const section = document.querySelector('.ar-view') as HTMLElement;
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+    const canvas = section.querySelector('.ar-canvas') as HTMLCanvasElement;
+    document.body.appendChild(canvas);
+    expect(canvas.parentElement).toBe(document.body);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Exit AR' }));
+
+    await waitFor(() => expect(canvas.parentElement).toBe(section));
+    expect(section.contains(canvas)).toBe(true);
+  });
+
+  it('restores the canvas under the section when the engine errors out', async () => {
+    const { engine } = makeFakeEngine();
+    render(
+      <ARView
+        view={makeView()}
+        onExit={() => undefined}
+        loadEngine={() => Promise.resolve(engine)}
+        createSession={() => ({
+          start: () => Promise.reject(new Error('engine exploded')),
+          stop: vi.fn(),
+        })}
+      />,
+    );
+    await screen.findByRole('alert');
+    const section = document.querySelector('.ar-view') as HTMLElement;
+    const canvas = section.querySelector('.ar-canvas') as HTMLCanvasElement;
+    document.body.appendChild(canvas);
+    expect(canvas.parentElement).toBe(document.body);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back to results' }));
+
+    await waitFor(() => expect(canvas.parentElement).toBe(section));
+    expect(section.contains(canvas)).toBe(true);
+  });
+
   it('dismisses the safety and license info while keeping the buttons', async () => {
     renderActive();
     expect(

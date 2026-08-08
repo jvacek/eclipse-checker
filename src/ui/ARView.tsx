@@ -116,6 +116,7 @@ export function ARView({
   headingSource,
 }: ARViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
   const arrowRef = useRef<HTMLDivElement>(null);
   const glyphRef = useRef<SVGSVGElement>(null);
   const onExitRef = useRef(onExit);
@@ -146,6 +147,7 @@ export function ARView({
     if (canvas === null) {
       return;
     }
+    const section = sectionRef.current;
 
     const source = headingSource ?? defaultHeadingSource();
     const loader = loadEngine ?? createBrowserEngineLoader(engineWindow());
@@ -283,6 +285,12 @@ export function ARView({
       stopHeading?.();
       overlay?.dispose();
       session?.stop();
+      // XRExtras' FullWindowCanvas module moves the canvas into document.body on
+      // attach and never moves it back on detach. Restore it under the section so
+      // unmount doesn't leave a frozen last AR frame pinned over the results view.
+      if (canvas !== null && section !== null && canvas.parentElement !== section) {
+        section.appendChild(canvas);
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -301,16 +309,29 @@ export function ARView({
     updateCompass(granted ? 'waiting' : 'denied');
   };
 
+  const restoreCanvas = () => {
+    // XRExtras' FullWindowCanvas module moves the canvas into document.body on
+    // attach and never moves it back on detach. Restore it under the section so
+    // React unmounts it with the component instead of leaving a frozen last AR
+    // frame pinned over the results view.
+    const canvas = canvasRef.current;
+    const section = sectionRef.current;
+    if (canvas !== null && section !== null && canvas.parentElement !== section) {
+      section.appendChild(canvas);
+    }
+  };
+
   const exitAR = () => {
     // Stop the engine and paint a black cover, then leave on the next frame so
     // the last rendered AR frame never flashes over the results view.
     setStatus('exiting');
     sessionRef.current?.stop();
+    restoreCanvas();
     requestAnimationFrame(() => onExitRef.current());
   };
 
   return (
-    <section className="ar-view" data-status={status}>
+    <section ref={sectionRef} className="ar-view" data-status={status}>
       <canvas ref={canvasRef} className="ar-canvas" />
 
       <div ref={arrowRef} className="ar-sun-arrow" hidden aria-hidden="true">
@@ -325,7 +346,7 @@ export function ARView({
       {status === 'error' && (
         <div className="ar-error" role="alert">
           <p>{error ?? 'AR is unavailable in this browser.'}</p>
-          <button type="button" className="primary" onClick={() => onExitRef.current()}>
+          <button type="button" className="primary" onClick={() => { restoreCanvas(); onExitRef.current(); }}>
             Back to results
           </button>
         </div>

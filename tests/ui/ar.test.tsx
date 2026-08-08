@@ -242,15 +242,6 @@ describe('ARView (8th Wall engine)', () => {
     const section = document.querySelector('.ar-view');
     await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
 
-    orientation.listeners[0]({
-      alpha: 0,
-      beta: 90,
-      gamma: 0,
-      absolute: false,
-      webkitCompassHeading: 90,
-    });
-    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
-
     await userEvent.click(screen.getByRole('button', { name: /Recalibrate compass/i }));
     await waitFor(() =>
       expect(
@@ -266,6 +257,26 @@ describe('ARView (8th Wall engine)', () => {
       webkitCompassHeading: 42,
     });
     await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+  });
+
+  it('hides the recalibrate button once the compass is aligned', async () => {
+    const { orientation } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    expect(screen.getByRole('button', { name: /Recalibrate compass/i })).toBeInTheDocument();
+
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: 90,
+    });
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Recalibrate compass/i })).not.toBeInTheDocument(),
+    );
   });
 
   it('reports compass permission denied without a heading fix', async () => {
@@ -299,7 +310,25 @@ describe('ARView (8th Wall engine)', () => {
       />,
     );
     await userEvent.click(screen.getByRole('button', { name: 'Exit AR' }));
-    expect(onExit).toHaveBeenCalledTimes(1);
+    // A black cover paints before leaving so the last AR frame never flashes.
+    expect(document.querySelector('.ar-view')).toHaveAttribute('data-status', 'exiting');
+    expect(document.querySelector('.ar-exit-cover')).toBeTruthy();
+    await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
+  });
+
+  it('dismisses the safety and license info while keeping the buttons', async () => {
+    renderActive();
+    expect(
+      screen.getByText(/never look at the Sun through any lens or AR overlay/i),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Hide safety and license info/i }));
+
+    expect(
+      screen.queryByText(/never look at the Sun through any lens or AR overlay/i),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/AR powered by the 8th Wall engine/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit AR' })).toBeInTheDocument();
   });
 
   it('shows role=alert when the engine fails to load', async () => {

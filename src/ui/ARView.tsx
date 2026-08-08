@@ -9,8 +9,8 @@ import {
   type EngineSessionApi,
 } from '../ar/engineSession';
 import { createBrowserEngineLoader, type EngineWindowLike } from '../ar/engineLoader';
-import { northAlignYawOffsetDeg, offscreenSunIndicator } from '../ar/math';
-import { createSkyOverlay, placeSkySun, type SkyOverlay } from '../ar/scene';
+import { northAlignYawOffsetDeg, offscreenSunIndicator, smoothHeadingDeg } from '../ar/math';
+import { createSkyOverlay, placeSkySun, MIN_SUN_DISPLAY_DEG, type SkyOverlay } from '../ar/scene';
 import {
   HeadingTracker,
   requestDeviceOrientationPermission,
@@ -120,9 +120,11 @@ export function ARView({
   const glyphRef = useRef<SVGSVGElement>(null);
   const onExitRef = useRef(onExit);
   const headingDegRef = useRef<number | null>(null);
+  const sessionRef = useRef<EngineSessionApi | null>(null);
 
-  const [status, setStatus] = useState<'starting' | 'active' | 'error'>('starting');
+  const [status, setStatus] = useState<'starting' | 'active' | 'error' | 'exiting'>('starting');
   const [error, setError] = useState<string | null>(null);
+  const [safetyVisible, setSafetyVisible] = useState(true);
   const [compass, setCompass] = useState<CompassState>(headingAuthorized ? 'waiting' : 'denied');
   const compassRef = useRef<CompassState>(compass);
 
@@ -177,6 +179,7 @@ export function ARView({
           return;
         }
         session = sessionFactory(engine, canvas);
+        sessionRef.current = session;
         ensureGlobalThree();
         const xrScene = await withTimeout(session.start(), AR_START_TIMEOUT_MS);
         if (disposed) {
@@ -195,7 +198,9 @@ export function ARView({
               console.debug(AR_LOG_PREFIX, `heading fix: ${headingDeg.toFixed(1)}°`);
             }
             lastHeadingLogAt = now;
-            headingDegRef.current = headingDeg;
+            // Smooth magnetometer jitter so the sun doesn't jump around while
+            // the compass ring (world-anchored) stays put.
+            headingDegRef.current = smoothHeadingDeg(headingDegRef.current, headingDeg);
             updateCompass('aligned');
           } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
             lastHeadingLogAt = now;
@@ -243,6 +248,8 @@ export function ARView({
                 overlay.sun.position,
                 fov,
                 aspect,
+                0.12,
+                Math.max(params.rSunDeg, MIN_SUN_DISPLAY_DEG),
               );
               if (indicator === null) {
                 arrow.hidden = true;
@@ -294,6 +301,14 @@ export function ARView({
     updateCompass(granted ? 'waiting' : 'denied');
   };
 
+  const exitAR = () => {
+    // Stop the engine and paint a black cover, then leave on the next frame so
+    // the last rendered AR frame never flashes over the results view.
+    setStatus('exiting');
+    sessionRef.current?.stop();
+    requestAnimationFrame(() => onExitRef.current());
+  };
+
   return (
     <section className="ar-view" data-status={status}>
       <canvas ref={canvasRef} className="ar-canvas" />
@@ -322,24 +337,38 @@ export function ARView({
         </p>
       )}
 
+      {status === 'exiting' && <div className="ar-exit-cover" aria-hidden="true" />}
+
       <div className="ar-safety">
-        <p>
-          Safety: never look at the Sun through any lens or AR overlay. The overlay is a simulation
-          — view the eclipse only with certified solar filters.
-        </p>
-        <p className="ar-attribution">
-          AR powered by the 8th Wall engine (Niantic Spatial). See the{' '}
-          <a href={XR_ENGINE_LICENSE_URL} target="_blank" rel="noreferrer">
-            XR Engine License Agreement
-          </a>
-          .
-        </p>
-        {status === 'active' && (
+        {safetyVisible && (
+          <div className="ar-safety-info">
+            <button
+              type="button"
+              className="ar-safety-dismiss"
+              aria-label="Hide safety and license info"
+              onClick={() => setSafetyVisible(false)}
+            >
+              ×
+            </button>
+            <p>
+              Safety: never look at the Sun through any lens or AR overlay. The overlay is a
+              simulation — view the eclipse only with certified solar filters.
+            </p>
+            <p className="ar-attribution">
+              AR powered by the 8th Wall engine (Niantic Spatial). See the{' '}
+              <a href={XR_ENGINE_LICENSE_URL} target="_blank" rel="noreferrer">
+                XR Engine License Agreement
+              </a>
+              .
+            </p>
+          </div>
+        )}
+        {status === 'active' && compass !== 'aligned' && (
           <button type="button" className="secondary" onClick={recalibrate}>
             Recalibrate compass
           </button>
         )}
-        <button type="button" className="primary" onClick={() => onExitRef.current()}>
+        <button type="button" className="primary" onClick={exitAR}>
           Exit AR
         </button>
       </div>

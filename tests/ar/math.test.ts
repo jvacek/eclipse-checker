@@ -6,6 +6,7 @@ import {
   northAlignYawOffsetDeg,
   normalizeDeg,
   offscreenSunIndicator,
+  smoothHeadingDeg,
   sunDirectionVector,
 } from '../../src/ar/math';
 
@@ -163,5 +164,33 @@ describe('offscreenSunIndicator', () => {
         expect(result.y).toBeLessThanOrEqual(1 - MARGIN + 1e-6);
       }
     }
+  });
+
+  it('keeps the arrow until the sun disc clears the viewport edge', () => {
+    // Center just inside the right edge: with no pad the center is "on screen",
+    // but the disc is still clipped, so the pad keeps the arrow visible.
+    const near = sunDirectionVector(28, 0);
+    expect(offscreenSunIndicator(IDENTITY, near, FOV, ASPECT, MARGIN)).toBeNull();
+    const padded = offscreenSunIndicator(IDENTITY, near, FOV, ASPECT, MARGIN, 3);
+    expect(padded).not.toBeNull();
+    expect(padded!.x).toBeCloseTo(1 - MARGIN, 4);
+  });
+});
+
+describe('smoothHeadingDeg', () => {
+  it('seeds with the raw heading when there is no previous value', () => {
+    expect(smoothHeadingDeg(null, 90)).toBe(90);
+  });
+
+  it('blends small sensor jitter toward the raw value', () => {
+    expect(smoothHeadingDeg(90, 92, 0.25, 20)).toBeCloseTo(90.5, 4);
+  });
+
+  it('wraps the blend across 0°/360°', () => {
+    expect(smoothHeadingDeg(359, 2, 0.25, 20)).toBeCloseTo(359.75, 4);
+  });
+
+  it('snaps to a deliberate turn', () => {
+    expect(smoothHeadingDeg(90, 200, 0.25, 20)).toBe(200);
   });
 });

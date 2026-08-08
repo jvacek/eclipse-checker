@@ -78,6 +78,35 @@ export function northAlignYawOffsetDeg(
   return normalizeDeg(compassHeadingDeg - cameraForwardAzimuthDeg(cameraQuaternion));
 }
 
+/**
+ * Signed smallest angle from `fromDeg` to `toDeg`, in (-180, 180]. Used for
+ * circular interpolation so heading blends wrap cleanly across 0°/360°.
+ */
+export function signedAngleDeltaDeg(fromDeg: number, toDeg: number): number {
+  return ((toDeg - fromDeg + 540) % 360) - 180;
+}
+
+/**
+ * Exponentially-weighted heading blend. Smooths magnetometer jitter (which
+ * otherwise makes the AR sun jump frame-to-frame while the compass ring stays
+ * still) while snapping instantly to large, deliberate turns.
+ */
+export function smoothHeadingDeg(
+  prevDeg: number | null,
+  rawDeg: number,
+  smoothing = 0.25,
+  snapDeg = 20,
+): number {
+  if (prevDeg === null) {
+    return normalizeDeg(rawDeg);
+  }
+  const delta = signedAngleDeltaDeg(prevDeg, rawDeg);
+  if (Math.abs(delta) >= snapDeg) {
+    return normalizeDeg(rawDeg);
+  }
+  return normalizeDeg(prevDeg + delta * smoothing);
+}
+
 export interface OffscreenIndicator {
   /** CSS rotation for an up-pointing arrow glyph; 0 = up, clockwise positive. */
   angleDeg: number;
@@ -93,6 +122,8 @@ export function offscreenSunIndicator(
   fovDeg: number, // camera vertical FOV
   aspect: number, // viewport width / height
   margin = 0.12,
+  /** Keep the arrow until the sun's disc (this angular radius) clears the edge. */
+  hidePadDeg = 0,
 ): OffscreenIndicator | null {
   // camera space: rotate by the conjugate (unit quaternion) — camera looks down -z
   const [qx, qy, qz, qw] = cameraQuaternion;
@@ -108,11 +139,13 @@ export function offscreenSunIndicator(
 
   let ndcX: number;
   let ndcY: number;
+  const padY = Math.tan(hidePadDeg * DEG_TO_RAD) / tanV;
+  const padX = padY / aspect;
   if (vz < -1e-6) {
     ndcX = vx / -vz / tanH;
     ndcY = vy / -vz / tanV;
-    if (Math.abs(ndcX) <= 1 && Math.abs(ndcY) <= 1) {
-      return null; // on screen
+    if (Math.abs(ndcX) <= 1 - padX && Math.abs(ndcY) <= 1 - padY) {
+      return null; // the sun disc is fully inside the viewport
     }
   } else {
     // Behind the camera: point toward (vx, vy) as-is — NOT negated.

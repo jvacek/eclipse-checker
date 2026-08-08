@@ -253,10 +253,15 @@ button.link {
   border-radius: 999px;
   font-size: 0.85rem;
   white-space: nowrap;
+  transition: opacity 0.8s ease;
 }
 
 .ar-compass[data-state='aligned'] {
   color: #a7f3d0;
+  /* Show the "aligned" confirmation, then slowly fade the label out. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.2s ease 2.5s;
 }
 
 .ar-compass[data-state='denied'] {
@@ -337,11 +342,49 @@ button.link {
   font-size: 0.85rem;
 }
 
-.ar-safety p {
-  margin: 0;
+.ar-safety-info {
+  position: relative;
   flex: 1 1 16rem;
+}
+
+.ar-safety-info p {
+  margin: 0;
+  padding-right: 1.5rem;
+}
+
+.ar-safety-info p + p {
+  margin-top: 0.35rem;
+}
+
+.ar-safety-dismiss {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffd9a0;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ar-safety-dismiss:hover {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .ar-safety button.secondary {
   margin-left: auto;
+}
+
+.ar-exit-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: #000;
 }

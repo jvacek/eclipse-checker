@@ -96,7 +96,8 @@ function makeController(options: {
   session?: EngineSessionApi;
   onStatus?: (status: 'active' | 'error') => void;
   onError?: (message: string) => void;
-  onCompass?: (state: 'requesting' | 'waiting' | 'aligned' | 'denied') => void;
+  onCompass?: (state: 'requesting' | 'waiting' | 'provisional' | 'aligned' | 'denied') => void;
+  onAccuracy?: (accuracyDeg: number | null) => void;
   headingSource?: FakeOrientationSource;
   dom?: ReturnType<typeof makeDom>;
 }) {
@@ -110,6 +111,7 @@ function makeController(options: {
   const onStatus = options.onStatus ?? vi.fn();
   const onError = options.onError ?? vi.fn();
   const onCompass = options.onCompass ?? vi.fn();
+  const onAccuracy = options.onAccuracy ?? vi.fn();
   const headingSource = options.headingSource ?? makeOrientationSource();
   const controller = createARController({
     view: makeView(),
@@ -120,9 +122,20 @@ function makeController(options: {
     headingSource,
     loadEngine: () => Promise.resolve(engine),
     createSession: () => session,
-    callbacks: { onStatus, onError, onCompass },
+    callbacks: { onStatus, onError, onCompass, onAccuracy },
   });
-  return { controller, dom, engine, session, onStatus, onError, onCompass, headingSource, glyph: dom.glyph };
+  return {
+    controller,
+    dom,
+    engine,
+    session,
+    onStatus,
+    onError,
+    onCompass,
+    onAccuracy,
+    headingSource,
+    glyph: dom.glyph,
+  };
 }
 
 describe('createARController', () => {
@@ -152,6 +165,36 @@ describe('createARController', () => {
 
     const arrow = glyph.parentElement as HTMLElement;
     expect(arrow).toBeTruthy();
+    controller.stop();
+  });
+
+  it('surfaces the live webkitCompassAccuracy via onAccuracy', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const { controller, onAccuracy, headingSource } = makeController({});
+    await controller.start();
+
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 24.9,
+    });
+    expect(onAccuracy).toHaveBeenCalledWith(24.9);
+
+    // Advance past the 250ms emit throttle before the next reading.
+    nowSpy.mockReturnValue(1_500);
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: null,
+      webkitCompassAccuracy: 12.4,
+    });
+    // Accuracy is surfaced even when the heading itself is unusable.
+    expect(onAccuracy).toHaveBeenCalledWith(12.4);
     controller.stop();
   });
 
@@ -273,8 +316,9 @@ describe('createARController', () => {
     });
     expect(onCompass).not.toHaveBeenCalledWith('aligned');
 
-    // After the deadline a poor reading is used provisionally (sun placed) but
-    // the compass is NOT reported aligned — the recalibrate button stays visible.
+    // After the deadline a poor reading is used provisionally (sun placed) and
+    // the compass flips to 'provisional' — the view is usable but the
+    // recalibrate button stays visible (not 'aligned').
     nowSpy.mockReturnValue(7_000);
     headingSource.listeners[0]({
       alpha: 0,
@@ -284,6 +328,7 @@ describe('createARController', () => {
       webkitCompassHeading: 90,
       webkitCompassAccuracy: 40,
     });
+    expect(onCompass).toHaveBeenCalledWith('provisional');
     expect(onCompass).not.toHaveBeenCalledWith('aligned');
 
     const sun = sky.children[0] as { position: { x: number; z: number } };

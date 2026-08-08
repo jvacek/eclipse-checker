@@ -1,8 +1,6 @@
 import { PermissionError, type PermissionRequestor } from './permission';
 
 const LOG_PREFIX = '[eclipse-checker:heading]';
-/** deviceorientation events fire at display rate; sample the debug log. */
-const EVENT_LOG_INTERVAL_MS = 1000;
 
 export interface HeadingData {
   headingDeg: number | null;
@@ -123,59 +121,29 @@ export class HeadingTracker {
   ) {}
 
   start(onHeading: (heading: HeadingData) => void): () => void {
-    let lastLogAt = 0;
     const listener = (event: DeviceOrientationEventLike) => {
       const accuracyDeg =
         typeof event.webkitCompassAccuracy === 'number' ? event.webkitCompassAccuracy : null;
       let heading: HeadingData;
-      let source: 'webkitCompassHeading' | 'alpha' | 'none';
       const webkitHeading = event.webkitCompassHeading;
       if (typeof webkitHeading === 'number' && Number.isFinite(webkitHeading)) {
         // webkitCompassHeading is earth-referenced (degrees clockwise from
         // north), i.e. it IS an absolute heading. iOS always reports
         // event.absolute === false on deviceorientation events, so the flag
         // must not gate this value.
-        source = 'webkitCompassHeading';
         heading = { headingDeg: normalizeDeg(webkitHeading), absolute: true, accuracyDeg };
       } else if (typeof event.alpha === 'number') {
-        source = 'alpha';
         heading = {
           headingDeg: compassHeading(event.alpha, this.screenAngle(), event.absolute),
           absolute: event.absolute,
           accuracyDeg,
         };
       } else {
-        source = 'none';
         heading = { headingDeg: null, absolute: event.absolute, accuracyDeg };
       }
-      lastLogAt = logEventThrottled(lastLogAt, source, event, heading);
       onHeading(heading);
     };
     this.source.addEventListener('deviceorientation', listener);
     return () => this.source.removeEventListener('deviceorientation', listener);
   }
-}
-
-function logEventThrottled(
-  lastLogAt: number,
-  source: 'webkitCompassHeading' | 'alpha' | 'none',
-  event: DeviceOrientationEventLike,
-  heading: HeadingData,
-): number {
-  const now = Date.now();
-  if (now - lastLogAt < EVENT_LOG_INTERVAL_MS) {
-    return lastLogAt;
-  }
-  console.debug(LOG_PREFIX, 'deviceorientation event', {
-    source,
-    alpha: event.alpha,
-    beta: event.beta,
-    gamma: event.gamma,
-    absolute: event.absolute,
-    webkitCompassHeading: event.webkitCompassHeading ?? null,
-    webkitCompassAccuracy: event.webkitCompassAccuracy ?? null,
-    emittedHeadingDeg: heading.headingDeg,
-    emittedAbsolute: heading.absolute,
-  });
-  return now;
 }

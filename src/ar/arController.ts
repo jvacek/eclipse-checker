@@ -7,8 +7,6 @@ import { createBrowserEngineLoader, type EngineWindowLike } from './engineLoader
 import { createEngineSession, type EngineApiLike, type EngineSessionApi, type EngineTrackingStatus } from './engineSession';
 import {
   cameraForwardAzimuthDeg,
-  normalizeDeg,
-  northAlignedAzimuth,
   northAlignYawOffsetDeg,
   offscreenSunIndicator,
 } from './math';
@@ -21,14 +19,17 @@ import {
 
 const AR_START_TIMEOUT_MS = 30_000;
 const AR_LOG_PREFIX = '[eclipse-checker:ar]';
-/** Heading events fire at display rate; sample the debug log. */
-const HEADING_LOG_INTERVAL_MS = 1000;
 /**
  * iOS reports `webkitCompassAccuracy` in degrees of error. Above this limit the
  * heading is unreliable (the magnetometer is re-calibrating — typically right
  * after the app returns from being backgrounded), so the fix is not trusted.
  */
-const COMPASS_ACCURACY_LIMIT_DEG = 15;
+export const COMPASS_ACCURACY_LIMIT_DEG = 15;
+/**
+ * Accuracy readings are surfaced to the UI at this cadence so the calibration
+ * bar feels live without re-rendering React at the deviceorientation rate.
+ */
+const ACCURACY_EMIT_INTERVAL_MS = 250;
 /**
  * iOS reports poor `webkitCompassAccuracy` while the magnetometer re-calibrates
  * (right after granting permission, after an app switch, or under magnetic
@@ -38,7 +39,7 @@ const COMPASS_ACCURACY_LIMIT_DEG = 15;
  */
 const CALIBRATION_GRACE_MS = 5000;
 
-export type CompassState = 'requesting' | 'waiting' | 'aligned' | 'denied';
+export type CompassState = 'requesting' | 'waiting' | 'provisional' | 'aligned' | 'denied';
 
 export interface ARControllerCallbacks {
   /** Fired once the session is live, or when startup failed. */
@@ -47,6 +48,8 @@ export interface ARControllerCallbacks {
   onError: (message: string) => void;
   /** Compass alignment transitions (first fix, recalibrate, permission denied). */
   onCompass: (state: CompassState) => void;
+  /** Throttled live `webkitCompassAccuracy` feed for the calibration UI. */
+  onAccuracy?: (accuracyDeg: number | null) => void;
 }
 
 export interface ARControllerOptions {
@@ -227,7 +230,6 @@ export function createARController(options: ARControllerOptions): ARController {
   let sceneCamera: SkyCameraLike | null = null;
   let raf = 0;
   let stopHeading: (() => void) | null = null;
-  let lastNorthDiagLogAt = 0;
   let yawOffsetDeg: number | null = null;
   /** True when the fix came from a poor-accuracy reading (see CALIBRATION_GRACE_MS). */
   let yawOffsetProvisional = false;
@@ -351,31 +353,6 @@ export function createARController(options: ARControllerOptions): ARController {
       params.yawOffsetDeg = yawOffsetDeg ?? 0;
       placeSkySun(overlay, params);
 
-      const now = Date.now();
-      if (now - lastNorthDiagLogAt >= HEADING_LOG_INTERVAL_MS) {
-        lastNorthDiagLogAt = now;
-        const q: [number, number, number, number] = [
-          sceneCamera.quaternion.x,
-          sceneCamera.quaternion.y,
-          sceneCamera.quaternion.z,
-          sceneCamera.quaternion.w,
-        ];
-        const forwardAz = cameraForwardAzimuthDeg(q);
-        // cameraForwardAzimuthDeg + yawOffsetDeg reconstructs the compass
-        // heading the engine camera is currently facing — the diagnostic that
-        // confirms whether the captured offset matches a live compass reading.
-        const inferredCompassHeadingDeg =
-          yawOffsetDeg === null ? null : normalizeDeg(forwardAz + yawOffsetDeg);
-        console.debug(AR_LOG_PREFIX, 'north diag', {
-          cameraForwardAzimuthDeg: forwardAz,
-          yawOffsetDeg,
-          inferredCompassHeadingDeg,
-          sunAzimuthDeg: params.azimuthDeg,
-          sunPlacedAzimuthDeg: northAlignedAzimuth(params.azimuthDeg, yawOffsetDeg ?? 0),
-          trackingStatus,
-        });
-      }
-
       const cam = sceneCamera as Partial<THREE.PerspectiveCamera>;
       const fov = typeof cam.fov === 'number' && cam.fov > 0 ? cam.fov : 60;
       const aspect = typeof cam.aspect === 'number' && cam.aspect > 0 ? cam.aspect : 1;
@@ -428,20 +405,23 @@ export function createARController(options: ARControllerOptions): ARController {
       overlay = createSkyOverlay(xrScene.scene as THREE.Scene);
       sceneCamera = xrScene.camera as SkyCameraLike;
 
-      let lastHeadingLogAt = 0;
+      let lastAccuracyEmitAt = 0;
       resetCalibration();
       stopHeading = heading.start(({ headingDeg, absolute, accuracyDeg }) => {
         const now = Date.now();
+        // Surface the live accuracy to the UI even before a usable heading
+        // exists (e.g. right after permission grant when webkitCompassAccuracy
+        // is still ~20–50°), throttled so the calibration bar doesn't re-render
+        // React at the deviceorientation rate.
+        if (
+          callbacks.onAccuracy !== undefined &&
+          accuracyDeg !== null &&
+          now - lastAccuracyEmitAt >= ACCURACY_EMIT_INTERVAL_MS
+        ) {
+          lastAccuracyEmitAt = now;
+          callbacks.onAccuracy(accuracyDeg);
+        }
         if (!absolute || headingDeg === null) {
-          if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
-            lastHeadingLogAt = now;
-            console.debug(
-              AR_LOG_PREFIX,
-              `ignoring heading event (absolute=${String(absolute)}, headingDeg=${String(
-                headingDeg,
-              )}, accuracy=${String(accuracyDeg)})`,
-            );
-          }
           return;
         }
 
@@ -466,21 +446,13 @@ export function createARController(options: ARControllerOptions): ARController {
           } else if (accurate && !trackingSettled) {
             // Heading is accurate but the engine hasn't finished establishing
             // its world frame. Wait rather than trust a provisional quaternion.
-            if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
-              lastHeadingLogAt = now;
-              console.debug(
-                AR_LOG_PREFIX,
-                `heading ${headingDeg.toFixed(1)}° accurate but world tracking ${String(
-                  trackingStatus?.status,
-                )} — waiting for the frame to settle before capturing the offset`,
-              );
-            }
           } else if (graceElapsed) {
             // Accuracy never settled within the grace period (stubborn
             // magnetometer / interference). Fall back to a provisional fix so
             // the AR view is not stuck unaligned; it is upgraded the moment an
             // accurate reading arrives.
             captureOffset(headingDeg, accuracyDeg, true);
+            callbacks.onCompass('provisional');
             console.warn(
               AR_LOG_PREFIX,
               `compass accuracy still poor after ${CALIBRATION_GRACE_MS} ms (${String(
@@ -488,8 +460,13 @@ export function createARController(options: ARControllerOptions): ARController {
               )}°); using a provisional heading — move the phone in a figure-8 or tap Recalibrate`,
             );
           }
-        } else if (yawOffsetProvisional && accurate && trackingSettled) {
+        } else if (yawOffsetProvisional && accurate) {
           // A good reading arrived; upgrade the provisional fix to a trusted one.
+          // (Deliberately not gated on trackingSettled: the provisional offset
+          // was already captured against the current frame, so an accurate
+          // reading is strictly better — and the re-anchor path handles frame
+          // changes. Gating here would strand the user in 'provisional' forever
+          // when SLAM never reports NORMAL, e.g. pointing at a featureless sky.)
           captureOffset(headingDeg, accuracyDeg, false);
           callbacks.onCompass('aligned');
         }

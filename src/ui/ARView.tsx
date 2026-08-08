@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import type { EclipseView } from '../astro';
 import {
+  COMPASS_ACCURACY_LIMIT_DEG,
   createARController,
   type ARController,
   type CompassState,
@@ -16,13 +17,44 @@ function compassMessage(state: CompassState): string {
   switch (state) {
     case 'aligned':
       return 'Compass aligned';
+    case 'provisional':
+      return 'Compass calibrating — view is approximate';
     case 'requesting':
       return 'Requesting compass access…';
     case 'denied':
       return 'Compass permission denied — the AR view is not north-aligned';
     default:
-      return 'Point your phone north to align the compass';
+      return 'Calibrate the compass to align the view';
   }
+}
+
+/**
+ * Live magnetometer calibration readout: shows the current `webkitCompassAccuracy`
+ * and how close it is to the trusted `COMPASS_ACCURACY_LIMIT_DEG` threshold.
+ * The bar fills toward the target line; it turns green once accuracy is trusted.
+ */
+function AccuracyGauge({ accuracyDeg }: { accuracyDeg: number }) {
+  const trusted = accuracyDeg <= COMPASS_ACCURACY_LIMIT_DEG;
+  // Scale: 0–60° fills the bar; the 15° target line sits at 25%.
+  const maxShownDeg = 60;
+  const pct = Math.min(Math.max(accuracyDeg / maxShownDeg, 0), 1) * 100;
+  const targetPct = (COMPASS_ACCURACY_LIMIT_DEG / maxShownDeg) * 100;
+  return (
+    <div className="ar-accuracy" data-trusted={trusted}>
+      <div className="ar-accuracy-label">
+        <span>
+          Accuracy <strong>{accuracyDeg.toFixed(1)}°</strong>
+        </span>
+        <span className={trusted ? 'ar-accuracy-status-ok' : ''}>
+          {trusted ? 'good ✓' : `target ≤ ${COMPASS_ACCURACY_LIMIT_DEG}°`}
+        </span>
+      </div>
+      <div className="ar-accuracy-track">
+        <span className="ar-accuracy-fill" style={{ width: `${pct}%` }} />
+        <span className="ar-accuracy-target" style={{ left: `${targetPct}%` }} />
+      </div>
+    </div>
+  );
 }
 
 export interface ARViewProps {
@@ -64,6 +96,7 @@ export function ARView({
   const [safetyVisible, setSafetyVisible] = useState(true);
   const [compass, setCompass] = useState<CompassState>(headingAuthorized ? 'waiting' : 'denied');
   const compassRef = useRef<CompassState>(compass);
+  const [accuracyDeg, setAccuracyDeg] = useState<number | null>(null);
 
   /** setCompass + a console breadcrumb so state transitions are visible while debugging. */
   const updateCompass = (next: CompassState) => {
@@ -96,6 +129,7 @@ export function ARView({
         onStatus: (next) => setStatus(next),
         onError: (message) => setError(message),
         onCompass: updateCompass,
+        onAccuracy: setAccuracyDeg,
       },
     });
     controllerRef.current = controller;
@@ -148,9 +182,18 @@ export function ARView({
       )}
 
       {status === 'active' && (
-        <p className="ar-compass" data-state={compass}>
-          {compassMessage(compass)}
-        </p>
+        <>
+          <p className="ar-compass" data-state={compass}>
+            {compassMessage(compass)}
+          </p>
+          {compass !== 'aligned' && compass !== 'denied' && (
+            <p className="ar-compass-hint">
+              Move the phone in a figure-8 (∞) motion for a few seconds to calibrate the
+              magnetometer — accuracy improves as you do this. Keep away from magnetic phone
+              cases, mounts, and metal.
+            </p>
+          )}
+        </>
       )}
 
       {status === 'exiting' && <div className="ar-exit-cover" aria-hidden="true" />}
@@ -178,6 +221,9 @@ export function ARView({
               .
             </p>
           </div>
+        )}
+        {status === 'active' && compass !== 'denied' && accuracyDeg !== null && (
+          <AccuracyGauge accuracyDeg={accuracyDeg} />
         )}
         {status === 'active' && compass !== 'aligned' && (
           <button

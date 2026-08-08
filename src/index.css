@@ -268,6 +268,12 @@ button.link {
   color: #fca5a5;
 }
 
+/* Provisional: a fix was captured but accuracy is still poor — keep the label
+   visible (don't fade like 'aligned') so the user knows alignment is approximate. */
+.ar-compass[data-state='provisional'] {
+  color: #fdba74;
+}
+
 .ar-compass::before {
   content: '';
   width: 0.6rem;
@@ -276,12 +282,86 @@ button.link {
   background: #fbbf24;
 }
 
+.ar-compass-hint {
+  position: absolute;
+  top: 6.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 24rem;
+  margin: 0;
+  padding: 0.5rem 0.9rem;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffe4c4;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-align: center;
+  pointer-events: none;
+}
+
+.ar-accuracy {
+  flex: 1 1 100%;
+  padding: 0.45rem 0.1rem 0.35rem;
+  border-radius: 10px;
+}
+
+.ar-accuracy-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  color: #ffe4c4;
+  font-size: 0.78rem;
+  margin-bottom: 0.3rem;
+}
+
+.ar-accuracy-label strong {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.ar-accuracy-status-ok {
+  color: #a7f3d0;
+}
+
+.ar-accuracy-track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  overflow: hidden;
+}
+
+.ar-accuracy-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #f87171, #fbbf24, #34d399);
+  transition: width 0.25s ease;
+}
+
+.ar-accuracy[data-trusted='true'] .ar-accuracy-fill {
+  background: #34d399;
+}
+
+.ar-accuracy-target {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
 .ar-compass[data-state='aligned']::before {
   background: #34d399;
 }
 
 .ar-compass[data-state='denied']::before {
   background: #f87171;
+}
+
+.ar-compass[data-state='provisional']::before {
+  background: #fbbf24;
 }
 
 .ar-compass[data-state='requesting']::before,

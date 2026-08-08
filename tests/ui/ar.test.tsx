@@ -211,7 +211,7 @@ describe('ARView (8th Wall engine)', () => {
     await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
 
     // Before any absolute heading, the compass shows the waiting hint.
-    expect(screen.getByText(/Point your phone north to align the compass/i)).toBeInTheDocument();
+    expect(screen.getByText(/Calibrate the compass to align the view/i)).toBeInTheDocument();
 
     orientation.listeners[0]({
       alpha: 0,
@@ -222,6 +222,66 @@ describe('ARView (8th Wall engine)', () => {
     });
     await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
     expect(screen.getByText(/Compass aligned/i)).toHaveAttribute('data-state', 'aligned');
+  });
+
+  it('shows the provisional hint instead of the waiting hint once a poor-accuracy fix lands', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const { orientation } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    expect(screen.getByText(/Calibrate the compass to align the view/i)).toBeInTheDocument();
+
+    // A poor-accuracy reading after the calibration grace period yields a
+    // provisional fix: the view is placed but the compass is not 'aligned', so
+    // the nagging "point north" hint is replaced by the calibrating hint.
+    nowSpy.mockReturnValue(7_000);
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 40,
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/Compass calibrating.*approximate/i)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/Calibrate the compass to align the view/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Recalibrate compass/i })).toBeInTheDocument();
+  });
+
+  it('shows the live accuracy gauge while calibrating, with the target threshold', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+    const { orientation } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    nowSpy.mockReturnValue(1_250);
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 24.9,
+    });
+    await waitFor(() => expect(screen.getByText(/Accuracy 24\.9°|24\.9°/)).toBeInTheDocument());
+    expect(screen.getByText(/target ≤ 15°/)).toBeInTheDocument();
+
+    // An accurate reading drives the gauge into the "good" state and aligns.
+    nowSpy.mockReturnValue(1_500);
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 4.2,
+    });
+    await waitFor(() => expect(screen.getByText(/good ✓/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+    nowSpy.mockRestore();
   });
 
   it('aligns from iOS events, which always report absolute: false', async () => {
@@ -361,7 +421,7 @@ describe('ARView (8th Wall engine)', () => {
     await userEvent.click(screen.getByRole('button', { name: /Recalibrate compass/i }));
     await waitFor(() =>
       expect(
-        screen.getByText(/Point your phone north to align the compass/i),
+        screen.getByText(/Calibrate the compass to align the view/i),
       ).toBeInTheDocument(),
     );
 

@@ -1,0 +1,83 @@
+{
+  "eclipseDate": "2026-08-12",
+  "source": [
+    "NASA city visibility table: https://science.nasa.gov/eclipses/future-eclipses/total-solar-eclipse-on-august-12-2026/",
+    "Per-city local circumstances: https://www.timeanddate.com/eclipse/ (Madrid, Reykjavik, London pages)",
+    "Besselian elements: https://eclipse.gsfc.nasa.gov/SEsearch/SEdata.php?Ecl=20260812"
+  ],
+  "attribution": "Eclipse Predictions by Fred Espenak, NASA's GSFC",
+  "tolerances": {
+    "peakTimeMin": 2,
+    "sunAltitudeDeg": 1.5,
+    "magnitude": 0.02,
+    "obscuration": 0.02
+  },
+  "notes": [
+    "Times are local wall-clock times on the eclipse date in the given IANA timezone.",
+    "Madrid and Reykjavik values cross-checked against NASA + timeanddate (agree).",
+    "London magnitude is not published by NASA/timeanddate; assert times and obscuration only.",
+    "Sydney is the negative case: the eclipse is not visible there; expect EclipseView null.",
+    "Madrid's partial phase ends after sunset; NASA publishes 21:16 CEST (ends-at-sunset variant 21:19). The geometric end per astronomy-engine is ~21:24 CEST, so Madrid uses partialEndToleranceMin: 10.",
+    "Position angles (PA) not yet asserted; extract from NASA per-eclipse local-circumstances tables if needed."
+  ],
+  "locations": [
+    {
+      "name": "Reykjavik",
+      "lat": 64.1466,
+      "lon": -21.9426,
+      "height": 61,
+      "timezone": "Atlantic/Reykjavik",
+      "expected": {
+        "kind": "Total",
+        "partialBeginLocal": "16:47",
+        "peakLocal": "17:48",
+        "partialEndLocal": "18:47",
+        "totalityDurationMin": 1,
+        "magnitude": 1.002,
+        "obscuration": 1.0,
+        "sunAltitudePeakDeg": 25.1
+      }
+    },
+    {
+      "name": "Madrid",
+      "lat": 40.4168,
+      "lon": -3.7038,
+      "height": 667,
+      "timezone": "Europe/Madrid",
+      "partialEndToleranceMin": 10,
+      "expected": {
+        "kind": "Partial",
+        "partialBeginLocal": "19:36",
+        "peakLocal": "20:32",
+        "partialEndLocal": "21:16",
+        "magnitude": 0.999,
+        "obscuration": 0.9997,
+        "sunAltitudePeakDeg": 7.0
+      }
+    },
+    {
+      "name": "London",
+      "lat": 51.5074,
+      "lon": -0.1278,
+      "height": 25,
+      "timezone": "Europe/London",
+      "expected": {
+        "kind": "Partial",
+        "partialBeginLocal": "18:17",
+        "peakLocal": "19:13",
+        "partialEndLocal": "20:06",
+        "magnitude": null,
+        "obscuration": 0.91,
+        "sunAltitudePeakDeg": null
+      }
+    },
+    {
+      "name": "Sydney (no eclipse visible)",
+      "lat": -33.8688,
+      "lon": 151.2093,
+      "height": 58,
+      "timezone": "Australia/Sydney",
+      "expected": null
+    }
+  ]
+}

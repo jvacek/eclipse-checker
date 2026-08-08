@@ -4,8 +4,14 @@ import * as THREE from 'three';
 import type { EclipseView } from '../astro';
 import { HeadingTracker, requestDeviceOrientationPermission, type DeviceOrientationLike } from '../sensors';
 import { createBrowserEngineLoader, type EngineWindowLike } from './engineLoader';
-import { createEngineSession, type EngineApiLike, type EngineSessionApi } from './engineSession';
-import { northAlignYawOffsetDeg, offscreenSunIndicator } from './math';
+import { createEngineSession, type EngineApiLike, type EngineSessionApi, type EngineTrackingStatus } from './engineSession';
+import {
+  cameraForwardAzimuthDeg,
+  normalizeDeg,
+  northAlignedAzimuth,
+  northAlignYawOffsetDeg,
+  offscreenSunIndicator,
+} from './math';
 import {
   createSkyOverlay,
   placeSkySun,
@@ -57,7 +63,11 @@ export interface ARControllerOptions {
   /** Injectable engine loader (defaults to the browser lazy loader). */
   loadEngine?: () => Promise<unknown>;
   /** Injectable session factory (defaults to the XR8 three.js session). */
-  createSession?: (engine: EngineApiLike, canvas: HTMLCanvasElement) => EngineSessionApi;
+  createSession?: (
+    engine: EngineApiLike,
+    canvas: HTMLCanvasElement,
+    hooks?: { onTrackingStatus?: (tracking: EngineTrackingStatus) => void },
+  ) => EngineSessionApi;
 }
 
 export interface ARController {
@@ -157,11 +167,16 @@ function fullWindowCanvasModules(win: Window): unknown[] {
   return module === undefined ? [] : [module];
 }
 
-function defaultSessionFactory(engine: EngineApiLike, canvas: HTMLCanvasElement): EngineSessionApi {
+function defaultSessionFactory(
+  engine: EngineApiLike,
+  canvas: HTMLCanvasElement,
+  hooks?: { onTrackingStatus?: (tracking: EngineTrackingStatus) => void },
+): EngineSessionApi {
   return createEngineSession({
     engine,
     canvas,
     extraModules: fullWindowCanvasModules(window),
+    onTrackingStatus: hooks?.onTrackingStatus,
   });
 }
 
@@ -212,12 +227,20 @@ export function createARController(options: ARControllerOptions): ARController {
   let sceneCamera: SkyCameraLike | null = null;
   let raf = 0;
   let stopHeading: (() => void) | null = null;
+  let lastNorthDiagLogAt = 0;
   let yawOffsetDeg: number | null = null;
   /** True when the fix came from a poor-accuracy reading (see CALIBRATION_GRACE_MS). */
   let yawOffsetProvisional = false;
   /** When the current calibration attempt stops waiting for good accuracy. */
   let calibrationDeadlineAt = Date.now() + CALIBRATION_GRACE_MS;
   let calibrationTimer = 0;
+  /**
+   * The engine's world-tracking state. The engine establishes an arbitrary
+   * world frame at session start; the compass offset is only trustworthy once
+   * tracking is `NORMAL` (the SLAM frame has settled) and must be re-anchored
+   * whenever the engine re-initializes that frame.
+   */
+  let trackingStatus: EngineTrackingStatus | null = null;
 
   const params = {
     azimuthDeg: view.sunAzimuthPeakDeg,
@@ -236,15 +259,14 @@ export function createARController(options: ARControllerOptions): ARController {
     if (sceneCamera === null) {
       return;
     }
-    yawOffsetDeg = northAlignYawOffsetDeg(
-      [
-        sceneCamera.quaternion.x,
-        sceneCamera.quaternion.y,
-        sceneCamera.quaternion.z,
-        sceneCamera.quaternion.w,
-      ],
-      headingDeg,
-    );
+    const quat: [number, number, number, number] = [
+      sceneCamera.quaternion.x,
+      sceneCamera.quaternion.y,
+      sceneCamera.quaternion.z,
+      sceneCamera.quaternion.w,
+    ];
+    const forwardAz = cameraForwardAzimuthDeg(quat);
+    yawOffsetDeg = northAlignYawOffsetDeg(quat, headingDeg);
     yawOffsetProvisional = provisional;
     console.info(
       AR_LOG_PREFIX,
@@ -252,6 +274,14 @@ export function createARController(options: ARControllerOptions): ARController {
         accuracyDeg,
       )})`,
     );
+    console.debug(AR_LOG_PREFIX, 'north offset', {
+      compassHeadingDeg: headingDeg,
+      cameraForwardAzimuthDeg: forwardAz,
+      yawOffsetDeg,
+      provisional,
+      trackingStatus,
+      quaternion: { x: quat[0], y: quat[1], z: quat[2], w: quat[3] },
+    });
   };
 
   /**
@@ -289,10 +319,62 @@ export function createARController(options: ARControllerOptions): ARController {
     }
   };
 
+  /**
+   * The engine's world frame is established arbitrarily at session start and can
+   * be re-anchored when tracking is lost and re-acquired. The compass offset is
+   * captured against that frame, so a frame change makes it stale: when the
+   * engine reports NORMAL tracking right after non-NORMAL (i.e. the frame was
+   * (re)established), drop the captured offset and re-anchor on the next
+   * accurate heading.
+   */
+  const onTrackingStatus = (next: EngineTrackingStatus): void => {
+    const prev = trackingStatus;
+    trackingStatus = next;
+    console.info(
+      AR_LOG_PREFIX,
+      `world tracking: ${next.status}${next.reason !== 'UNSPECIFIED' ? ` (${next.reason})` : ''}${
+        prev !== null && prev.status !== next.status ? ` (was ${prev.status})` : ''
+      }`,
+    );
+    if (prev !== null && next.status === 'NORMAL' && prev.status !== 'NORMAL' && yawOffsetDeg !== null) {
+      console.warn(
+        AR_LOG_PREFIX,
+        'engine re-established its world frame; captured compass offset is stale — dropping and re-anchoring on the next accurate heading',
+      );
+      resetCalibration();
+      callbacks.onCompass('waiting');
+    }
+  };
+
   const tick = () => {
     if (overlay !== null && sceneCamera !== null) {
       params.yawOffsetDeg = yawOffsetDeg ?? 0;
       placeSkySun(overlay, params);
+
+      const now = Date.now();
+      if (now - lastNorthDiagLogAt >= HEADING_LOG_INTERVAL_MS) {
+        lastNorthDiagLogAt = now;
+        const q: [number, number, number, number] = [
+          sceneCamera.quaternion.x,
+          sceneCamera.quaternion.y,
+          sceneCamera.quaternion.z,
+          sceneCamera.quaternion.w,
+        ];
+        const forwardAz = cameraForwardAzimuthDeg(q);
+        // cameraForwardAzimuthDeg + yawOffsetDeg reconstructs the compass
+        // heading the engine camera is currently facing — the diagnostic that
+        // confirms whether the captured offset matches a live compass reading.
+        const inferredCompassHeadingDeg =
+          yawOffsetDeg === null ? null : normalizeDeg(forwardAz + yawOffsetDeg);
+        console.debug(AR_LOG_PREFIX, 'north diag', {
+          cameraForwardAzimuthDeg: forwardAz,
+          yawOffsetDeg,
+          inferredCompassHeadingDeg,
+          sunAzimuthDeg: params.azimuthDeg,
+          sunPlacedAzimuthDeg: northAlignedAzimuth(params.azimuthDeg, yawOffsetDeg ?? 0),
+          trackingStatus,
+        });
+      }
 
       const cam = sceneCamera as Partial<THREE.PerspectiveCamera>;
       const fov = typeof cam.fov === 'number' && cam.fov > 0 ? cam.fov : 60;
@@ -337,7 +419,7 @@ export function createARController(options: ARControllerOptions): ARController {
       if (stopped) {
         return;
       }
-      session = sessionFactory(engine, canvas);
+      session = sessionFactory(engine, canvas, { onTrackingStatus });
       ensureGlobalThree();
       const xrScene = await withTimeout(session.start(), AR_START_TIMEOUT_MS);
       if (stopped) {
@@ -365,9 +447,15 @@ export function createARController(options: ARControllerOptions): ARController {
 
         const accurate = accuracyOk(accuracyDeg);
         const graceElapsed = now >= calibrationDeadlineAt;
+        // The engine's world frame (and therefore the camera quaternion) is not
+        // meaningful until world tracking settles to NORMAL. Capturing the
+        // compass offset against an initializing frame freezes a wrong north
+        // for the whole session.
+        const trackingSettled =
+          trackingStatus === null || trackingStatus.status === 'NORMAL';
 
         if (yawOffsetDeg === null) {
-          if (accurate) {
+          if (accurate && trackingSettled) {
             // The engine world frame is fixed for the session, so the offset
             // between compass north and that frame is a constant — capture it
             // once per fix (first fix, foreground re-anchor, or explicit
@@ -375,6 +463,18 @@ export function createARController(options: ARControllerOptions): ARController {
             // where magnetometer noise would shake the sun.
             captureOffset(headingDeg, accuracyDeg, false);
             callbacks.onCompass('aligned');
+          } else if (accurate && !trackingSettled) {
+            // Heading is accurate but the engine hasn't finished establishing
+            // its world frame. Wait rather than trust a provisional quaternion.
+            if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
+              lastHeadingLogAt = now;
+              console.debug(
+                AR_LOG_PREFIX,
+                `heading ${headingDeg.toFixed(1)}° accurate but world tracking ${String(
+                  trackingStatus?.status,
+                )} — waiting for the frame to settle before capturing the offset`,
+              );
+            }
           } else if (graceElapsed) {
             // Accuracy never settled within the grace period (stubborn
             // magnetometer / interference). Fall back to a provisional fix so
@@ -388,7 +488,7 @@ export function createARController(options: ARControllerOptions): ARController {
               )}°); using a provisional heading — move the phone in a figure-8 or tap Recalibrate`,
             );
           }
-        } else if (yawOffsetProvisional && accurate) {
+        } else if (yawOffsetProvisional && accurate && trackingSettled) {
           // A good reading arrived; upgrade the provisional fix to a trusted one.
           captureOffset(headingDeg, accuracyDeg, false);
           callbacks.onCompass('aligned');

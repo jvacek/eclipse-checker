@@ -70,7 +70,7 @@ function rotateQuaternion(
   return [vx + 2 * qw * cx + 2 * dx, vy + 2 * qw * cy + 2 * dy, vz + 2 * qw * cz + 2 * dz];
 }
 
-function cameraForwardAzimuthDeg(q: QuaternionTuple): number {
+export function cameraForwardAzimuthDeg(q: QuaternionTuple): number {
   const f = rotateQuaternion(q, 0, 0, -1);
   return normalizeDeg(Math.atan2(f[0], -f[2]) * RAD_TO_DEG);
 }

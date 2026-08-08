@@ -88,7 +88,8 @@ function shareUrlFor(view: EclipseView): string {
 export default function App() {
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const geolocation = usePermission(geolocationRequestor);
-  const heading = useHeading();
+  const [headingAuthorized, setHeadingAuthorized] = useState(false);
+  const heading = useHeading(headingAuthorized);
 
   useEffect(() => {
     if (phase.kind === 'results') {
@@ -114,12 +115,19 @@ export default function App() {
   // compass can align as soon as AR starts, instead of waiting for a manual
   // "recalibrate" tap.
   const viewAr = async (view: EclipseView) => {
-    const headingAuthorized = await requestDeviceOrientationPermission(window);
+    const granted = await requestDeviceOrientationPermission(window);
     console.debug(
       '[eclipse-checker:ar] entry: orientation permission',
-      headingAuthorized ? 'granted' : 'denied',
+      granted ? 'granted' : 'denied',
     );
-    setPhase({ kind: 'ar', view, headingAuthorized });
+    if (granted) {
+      // Only listen for deviceorientation once permission is granted — iOS logs
+      // "No device orientation events will be fired" if a listener is registered
+      // before the permission request. This also switches on the 2D sky-map
+      // heading when returning to results.
+      setHeadingAuthorized(true);
+    }
+    setPhase({ kind: 'ar', view, headingAuthorized: granted });
   };
 
   return (

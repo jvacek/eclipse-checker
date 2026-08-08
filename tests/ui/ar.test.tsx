@@ -126,7 +126,11 @@ describe('ARView (8th Wall engine)', () => {
     const { createSession, start, sky } = renderActive();
     const section = document.querySelector('.ar-view');
     await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
-    expect(createSession).toHaveBeenCalledWith(expect.anything(), expect.any(HTMLCanvasElement));
+    expect(createSession).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(HTMLCanvasElement),
+      expect.objectContaining({ onTrackingStatus: expect.any(Function) }),
+    );
     expect(start).toHaveBeenCalledTimes(1);
     expect(sky.scene.children.length).toBeGreaterThan(0);
   });

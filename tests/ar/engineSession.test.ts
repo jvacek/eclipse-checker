@@ -15,6 +15,7 @@ interface FakeEngine {
     onStart?: () => void;
     onException?: (error: unknown) => void;
     onDetach?: () => void;
+    onUpdate?: (result: unknown) => void;
   }>;
   sky: EngineSceneLike;
   run: ReturnType<typeof vi.fn>;
@@ -154,5 +155,33 @@ describe('createEngineSession', () => {
     sceneModule.onException!(new Error('late failure'));
     sceneModule.onDetach!();
     await expect(ready).resolves.toBe(sky);
+  });
+
+  it('reports world-tracking status transitions via onTrackingStatus', () => {
+    const { engine, modules } = makeEngine();
+    const onTrackingStatus = vi.fn();
+    createEngineSession({ engine, canvas: {}, onTrackingStatus }).start();
+
+    const sceneModule = findSceneModule(modules)!;
+    expect(sceneModule.onUpdate).toBeDefined();
+    // Initialising frame: reported once.
+    sceneModule.onUpdate!({ processCpuResult: { reality: { trackingStatus: 'LIMITED', trackingReason: 'INITIALIZING' } } });
+    expect(onTrackingStatus).toHaveBeenNthCalledWith(1, { status: 'LIMITED', reason: 'INITIALIZING' });
+    // Same status repeated: not re-reported.
+    sceneModule.onUpdate!({ processCpuResult: { reality: { trackingStatus: 'LIMITED', trackingReason: 'INITIALIZING' } } });
+    expect(onTrackingStatus).toHaveBeenCalledTimes(1);
+    // Settled frame: reported once.
+    sceneModule.onUpdate!({ processCpuResult: { reality: { trackingStatus: 'NORMAL', trackingReason: 'UNSPECIFIED' } } });
+    expect(onTrackingStatus).toHaveBeenNthCalledWith(2, { status: 'NORMAL', reason: 'UNSPECIFIED' });
+  });
+
+  it('ignores onUpdate frames that carry no reality result', () => {
+    const { engine, modules } = makeEngine();
+    const onTrackingStatus = vi.fn();
+    createEngineSession({ engine, canvas: {}, onTrackingStatus }).start();
+    const sceneModule = findSceneModule(modules)!;
+    sceneModule.onUpdate!({ frameStartResult: {} });
+    sceneModule.onUpdate!({ processCpuResult: {} });
+    expect(onTrackingStatus).not.toHaveBeenCalled();
   });
 });

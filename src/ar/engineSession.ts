@@ -26,11 +26,20 @@ export interface EngineApiLike {
   XrController: EngineXrControllerApi;
 }
 
+export interface EngineTrackingStatus {
+  /** `'LIMITED'` (tracking uninitialized/lost) or `'NORMAL'` (settled). */
+  status: string;
+  /** `'INITIALIZING'`, `'UNSPECIFIED'`, or engine-specific extras. */
+  reason: string;
+}
+
 export interface EngineSessionOptions {
   engine: EngineApiLike;
   canvas: unknown;
   /** Extra camera pipeline modules, e.g. XRExtras helpers. */
   extraModules?: unknown[];
+  /** Fired whenever the engine's world-tracking status changes (once settled, re-anchors). */
+  onTrackingStatus?: (tracking: EngineTrackingStatus) => void;
 }
 
 export interface EngineSessionApi {
@@ -67,6 +76,7 @@ export function createEngineSession(options: EngineSessionOptions): EngineSessio
 
   let state: SessionState = 'idle';
   let settled = false;
+  let lastTrackingStatus: EngineTrackingStatus | null = null;
   let resolveScene: ((scene: EngineSceneLike) => void) | null = null;
   let rejectScene: ((reason: Error) => void) | null = null;
   const sceneReady = new Promise<EngineSceneLike>((resolve, reject) => {
@@ -113,6 +123,35 @@ export function createEngineSession(options: EngineSessionOptions): EngineSessio
       // pending start() instead of letting it hang.
       if (!settled) {
         settleReject(new Error('the AR session ended before it started'));
+      }
+    },
+    onUpdate: (result: unknown) => {
+      // The engine's XrController exposes its world-tracking state as
+      // `processCpuResult.reality`; surface status transitions so the caller
+      // can (re-)anchor compass north only against a settled world frame.
+      const reality = (result as { processCpuResult?: { reality?: unknown } }).processCpuResult
+        ?.reality;
+      if (typeof reality !== 'object' || reality === null) {
+        return;
+      }
+      const { trackingStatus, trackingReason } = reality as {
+        trackingStatus?: unknown;
+        trackingReason?: unknown;
+      };
+      if (typeof trackingStatus !== 'string') {
+        return;
+      }
+      const next: EngineTrackingStatus = {
+        status: trackingStatus,
+        reason: typeof trackingReason === 'string' ? trackingReason : 'UNSPECIFIED',
+      };
+      if (
+        lastTrackingStatus === null ||
+        lastTrackingStatus.status !== next.status ||
+        lastTrackingStatus.reason !== next.reason
+      ) {
+        lastTrackingStatus = next;
+        options.onTrackingStatus?.(next);
       }
     },
   };

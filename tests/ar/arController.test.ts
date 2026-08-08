@@ -312,4 +312,129 @@ describe('createARController', () => {
 
     controller.stop();
   });
+
+  it('waits for the engine world frame to settle before capturing a trusted offset', async () => {
+    const dom = makeDom();
+    const sky = new Scene();
+    let onTrackingStatus:
+      | ((tracking: { status: string; reason: string }) => void)
+      | undefined;
+    const session = {
+      start: () => Promise.resolve({ scene: sky, camera: { quaternion: new Quaternion() } }),
+      stop: vi.fn(),
+    };
+    const onCompass = vi.fn();
+    const headingSource = makeOrientationSource();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+
+    const controller = createARController({
+      view: makeView(),
+      canvas: dom.canvas,
+      section: dom.section,
+      arrow: dom.arrow,
+      glyph: dom.glyph,
+      headingSource,
+      loadEngine: () => Promise.resolve(makeFakeEngine()),
+      createSession: (_engine, _canvas, hooks) => {
+        onTrackingStatus = hooks?.onTrackingStatus;
+        return session;
+      },
+      callbacks: { onStatus: vi.fn(), onError: vi.fn(), onCompass },
+    });
+    await controller.start();
+
+    // Accurate reading while the engine world frame is still INITIALIZING:
+    // the offset must NOT be captured (the quaternion is not trustworthy yet).
+    onTrackingStatus?.({ status: 'LIMITED', reason: 'INITIALIZING' });
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 2,
+    });
+    expect(onCompass).not.toHaveBeenCalledWith('aligned');
+
+    // The frame settles; the next accurate reading anchors the offset.
+    nowSpy.mockReturnValue(2_000);
+    onTrackingStatus?.({ status: 'NORMAL', reason: 'UNSPECIFIED' });
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 2,
+    });
+    expect(onCompass).toHaveBeenCalledWith('aligned');
+
+    controller.stop();
+  });
+
+  it('drops the captured offset when the engine re-establishes its world frame', async () => {
+    const dom = makeDom();
+    const sky = new Scene();
+    let onTrackingStatus:
+      | ((tracking: { status: string; reason: string }) => void)
+      | undefined;
+    const session = {
+      start: () => Promise.resolve({ scene: sky, camera: { quaternion: new Quaternion() } }),
+      stop: vi.fn(),
+    };
+    const onCompass = vi.fn();
+    const headingSource = makeOrientationSource();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+
+    const controller = createARController({
+      view: makeView(),
+      canvas: dom.canvas,
+      section: dom.section,
+      arrow: dom.arrow,
+      glyph: dom.glyph,
+      headingSource,
+      loadEngine: () => Promise.resolve(makeFakeEngine()),
+      createSession: (_engine, _canvas, hooks) => {
+        onTrackingStatus = hooks?.onTrackingStatus;
+        return session;
+      },
+      callbacks: { onStatus: vi.fn(), onError: vi.fn(), onCompass },
+    });
+    await controller.start();
+
+    // Settle, then capture a trusted offset.
+    nowSpy.mockReturnValue(2_000);
+    onTrackingStatus?.({ status: 'NORMAL', reason: 'UNSPECIFIED' });
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 2,
+    });
+    expect(onCompass).toHaveBeenCalledWith('aligned');
+
+    // The engine loses tracking and re-establishes its frame: the captured
+    // offset is stale, so the compass returns to 'waiting' until the next fix.
+    nowSpy.mockReturnValue(4_000);
+    onTrackingStatus?.({ status: 'LIMITED', reason: 'INITIALIZING' });
+    nowSpy.mockReturnValue(5_000);
+    onTrackingStatus?.({ status: 'NORMAL', reason: 'UNSPECIFIED' });
+    expect(onCompass).toHaveBeenCalledWith('waiting');
+
+    // A fresh accurate reading re-anchors against the re-established frame.
+    nowSpy.mockReturnValue(5_100);
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 2,
+    });
+    expect(onCompass).toHaveBeenCalledWith('aligned');
+
+    controller.stop();
+  });
 });

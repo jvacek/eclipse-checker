@@ -48,6 +48,49 @@ describe('createSkyOverlay', () => {
   });
 });
 
+describe('bearing ring compass alignment', () => {
+  const DEG_TO_RAD = Math.PI / 180;
+  const worldAzimuthOf = (pos: Vector3): number =>
+    ((Math.atan2(pos.x, -pos.z) * 180) / Math.PI + 360) % 360;
+
+  it('rotates the ring by +yawOffset so N points at compass north', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    // Sun at compass 90 with yaw 90 → placed at world azimuth 0 (the -Z axis).
+    placeSkySun(overlay, makeParams({ azimuthDeg: 90, altitudeDeg: 0, yawOffsetDeg: 90 }));
+    expect(worldAzimuthOf(overlay.sun.position)).toBeCloseTo(0, 5);
+
+    // N is built at world azimuth 0; after a +90° yaw it must land at world
+    // azimuth 270 (= −90), which is where compass north sits when the sun at
+    // compass east is on the −Z axis.
+    expect(overlay.bearings.rotation.y).toBeCloseTo(90 * DEG_TO_RAD, 6);
+    const n = overlay.bearings.getObjectByName('bearing-N')!;
+    const nWorld = n.getWorldPosition(new Vector3());
+    expect(worldAzimuthOf(nWorld)).toBeCloseTo(270, 5);
+    overlay.dispose();
+  });
+
+  it('keeps the ring world-aligned when the yaw offset is zero', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    placeSkySun(overlay, makeParams({ azimuthDeg: 180, altitudeDeg: 30, yawOffsetDeg: 0 }));
+    expect(overlay.bearings.rotation.y).toBe(0);
+    const n = overlay.bearings.getObjectByName('bearing-N')!;
+    expect(worldAzimuthOf(n.getWorldPosition(new Vector3()))).toBeCloseTo(0, 5);
+    overlay.dispose();
+  });
+
+  it('re-rotates the ring when the yaw offset changes (recalibrate)', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    placeSkySun(overlay, makeParams({ yawOffsetDeg: 30 }));
+    expect(overlay.bearings.rotation.y).toBeCloseTo(30 * DEG_TO_RAD, 6);
+    placeSkySun(overlay, makeParams({ yawOffsetDeg: 150 }));
+    expect(overlay.bearings.rotation.y).toBeCloseTo(150 * DEG_TO_RAD, 6);
+    overlay.dispose();
+  });
+});
+
 describe('placeSkySun', () => {
   it('places the sun at the north-aligned azimuth and altitude', () => {
     const scene = new Scene();

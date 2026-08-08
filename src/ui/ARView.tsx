@@ -1,43 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
-import * as Sentry from '@sentry/react';
-import * as THREE from 'three';
 
 import type { EclipseView } from '../astro';
 import {
-  createEngineSession,
-  type EngineApiLike,
-  type EngineSessionApi,
-} from '../ar/engineSession';
-import { createBrowserEngineLoader, type EngineWindowLike } from '../ar/engineLoader';
-import {
-  northAlignYawOffsetDeg,
-  offscreenSunIndicator,
-} from '../ar/math';
-import { createSkyOverlay, placeSkySun, MIN_SUN_DISPLAY_DEG, type SkyOverlay } from '../ar/scene';
-import {
-  HeadingTracker,
-  requestDeviceOrientationPermission,
-  type DeviceOrientationLike,
-} from '../sensors';
+  createARController,
+  type ARController,
+  type CompassState,
+} from '../ar/arController';
+import type { EngineApiLike, EngineSessionApi } from '../ar/engineSession';
+import type { DeviceOrientationLike } from '../sensors';
 
 const XR_ENGINE_LICENSE_URL = 'https://github.com/8thwall/engine/blob/main/LICENSE';
-const AR_START_TIMEOUT_MS = 30_000;
 const AR_LOG_PREFIX = '[eclipse-checker:ar]';
-/** Heading events fire at display rate; sample the debug log. */
-const HEADING_LOG_INTERVAL_MS = 1000;
-/**
- * iOS reports `webkitCompassAccuracy` in degrees of error. Above this limit the
- * heading is unreliable (the magnetometer is re-calibrating — typically right
- * after the app returns from being backgrounded), so the fix is not trusted.
- */
-const COMPASS_ACCURACY_LIMIT_DEG = 15;
-
-function accuracyOk(accuracyDeg: number | null): boolean {
-  // Android reports no accuracy, so nothing to gate on.
-  return accuracyDeg === null || accuracyDeg <= COMPASS_ACCURACY_LIMIT_DEG;
-}
-
-type CompassState = 'requesting' | 'waiting' | 'aligned' | 'denied';
 
 function compassMessage(state: CompassState): string {
   switch (state) {
@@ -65,62 +38,12 @@ export interface ARViewProps {
   headingSource?: DeviceOrientationLike;
 }
 
-interface SkyCameraLike {
-  quaternion: { x: number; y: number; z: number; w: number };
-}
-
-function engineWindow(): EngineWindowLike {
-  return window as unknown as EngineWindowLike;
-}
-
-function defaultHeadingSource(): DeviceOrientationLike {
-  return {
-    addEventListener: (type, listener) => window.addEventListener(type, listener),
-    removeEventListener: (type, listener) => window.removeEventListener(type, listener),
-  };
-}
-
 /**
- * The engine's `Threejs` pipeline module instantiates its renderer from a
- * global `window.THREE` namespace; expose the app's three.js module to it before
- * the camera pipeline starts.
+ * Thin React shell over the imperative `ARController`. All AR side effects
+ * (engine load, camera pipeline, rAF render loop, compass yaw capture) live in
+ * `src/ar/arController.ts`; this component only owns status state and DOM refs
+ * that the controller writes into.
  */
-function ensureGlobalThree(): void {
-  (window as unknown as { THREE: typeof THREE }).THREE = THREE;
-}
-
-/**
- * Pre-flight camera check so we can fail fast with a clear message instead of
- * waiting on the engine to report that no session could start. When the API is
- * missing or errors, assume the engine will sort it out (returns true).
- */
-async function hasCamera(win: Window): Promise<boolean> {
-  const media = win.navigator?.mediaDevices;
-  if (typeof media?.enumerateDevices !== 'function') {
-    return true;
-  }
-  try {
-    const devices = await media.enumerateDevices();
-    return devices.some((device) => device.kind === 'videoinput');
-  } catch {
-    return true;
-  }
-}
-
-/** Translates raw engine errors into guidance a user can act on. */
-function friendlyError(message: string): string {
-  if (/no valid session manager/i.test(message)) {
-    return "AR isn't supported on this device or browser. Try on a phone with a camera and motion sensors.";
-  }
-  if (/timed out/i.test(message)) {
-    return 'AR took too long to start. Try again.';
-  }
-  if (/camera|getusermedia|video input/i.test(message)) {
-    return 'No camera was found, or camera access was denied. AR needs the camera.';
-  }
-  return message;
-}
-
 export function ARView({
   view,
   onExit,
@@ -134,10 +57,7 @@ export function ARView({
   const arrowRef = useRef<HTMLDivElement>(null);
   const glyphRef = useRef<SVGSVGElement>(null);
   const onExitRef = useRef(onExit);
-  /** Engine-frame yaw offset from compass north; null until an accurate heading fix. */
-  const yawOffsetRef = useRef<number | null>(null);
-  const sessionRef = useRef<EngineSessionApi | null>(null);
-  const exitingRef = useRef(false);
+  const controllerRef = useRef<ARController | null>(null);
 
   const [status, setStatus] = useState<'starting' | 'active' | 'error' | 'exiting'>('starting');
   const [error, setError] = useState<string | null>(null);
@@ -163,207 +83,38 @@ export function ARView({
     if (canvas === null) {
       return;
     }
-    const section = sectionRef.current;
-
-    const source = headingSource ?? defaultHeadingSource();
-    const loader = loadEngine ?? createBrowserEngineLoader(engineWindow());
-    const sessionFactory = createSession ?? defaultSessionFactory;
-    const params = {
-      azimuthDeg: view.sunAzimuthPeakDeg,
-      altitudeDeg: view.sunAltitudePeakDeg,
-      latitudeDeg: view.observer.lat,
-      rSunDeg: view.rSunDeg,
-      rMoonDeg: view.rMoonDeg,
-      separationDeg: view.separationDeg,
-      positionAngleDeg: view.moonPositionAngleDeg,
-      obscuration: view.obscuration,
-      yawOffsetDeg: 0,
-    };
-
-    let disposed = false;
-    let session: EngineSessionApi | null = null;
-    let overlay: SkyOverlay | null = null;
-    let sceneCamera: SkyCameraLike | null = null;
-    let raf = 0;
-    let stopHeading: (() => void) | null = null;
-    const heading = new HeadingTracker(source);
-
-    // An app switch stops deviceorientation events while backgrounded. When the
-    // app comes back the magnetometer is usually mid-recalibration, so the first
-    // fix can be off. Drop the yaw offset so the next accurate heading
-    // re-establishes it from a fresh camera orientation.
-    const onResume = () => {
-      if (document.visibilityState === 'visible' && yawOffsetRef.current !== null) {
-        console.info(AR_LOG_PREFIX, 'app foregrounded; re-anchoring compass');
-        yawOffsetRef.current = null;
-      }
-    };
-    document.addEventListener('visibilitychange', onResume);
-
-    const run = async () => {
-      try {
-        if (!(await hasCamera(window))) {
-          throw new Error('No camera was found. AR needs the camera.');
-        }
-        const engine = (await loader()) as EngineApiLike;
-        if (disposed) {
-          return;
-        }
-        session = sessionFactory(engine, canvas);
-        sessionRef.current = session;
-        ensureGlobalThree();
-        const xrScene = await withTimeout(session.start(), AR_START_TIMEOUT_MS);
-        if (disposed) {
-          return;
-        }
-        overlay = createSkyOverlay(xrScene.scene as THREE.Scene);
-        sceneCamera = xrScene.camera as SkyCameraLike;
-
-        let lastHeadingLogAt = 0;
-        stopHeading = heading.start(({ headingDeg, absolute, accuracyDeg }) => {
-          const now = Date.now();
-          if (absolute && headingDeg !== null && accuracyOk(accuracyDeg)) {
-            // The engine world frame is fixed for the session, so the offset
-            // between compass north and that frame is a constant — capture it
-            // once per fix (first fix, foreground re-anchor, or explicit
-            // recalibrate) and hold it, instead of re-deriving it per frame
-            // where magnetometer noise would shake the sun.
-            if (yawOffsetRef.current === null && sceneCamera !== null) {
-              yawOffsetRef.current = northAlignYawOffsetDeg(
-                [
-                  sceneCamera.quaternion.x,
-                  sceneCamera.quaternion.y,
-                  sceneCamera.quaternion.z,
-                  sceneCamera.quaternion.w,
-                ],
-                headingDeg,
-              );
-              console.info(
-                AR_LOG_PREFIX,
-                `heading fix acquired: ${headingDeg.toFixed(1)}° (accuracy ${String(accuracyDeg)})`,
-              );
-            }
-            updateCompass('aligned');
-          } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
-            lastHeadingLogAt = now;
-            console.debug(
-              AR_LOG_PREFIX,
-              `ignoring heading event (absolute=${String(absolute)}, headingDeg=${String(
-                headingDeg,
-              )}, accuracy=${String(accuracyDeg)})`,
-            );
-          }
-        });
-
-        const tick = () => {
-          if (overlay !== null && sceneCamera !== null) {
-            params.yawOffsetDeg = yawOffsetRef.current ?? 0;
-            placeSkySun(overlay, params);
-
-            const arrow = arrowRef.current;
-            const glyph = glyphRef.current;
-            const cam = sceneCamera as Partial<THREE.PerspectiveCamera>;
-            const fov = typeof cam.fov === 'number' && cam.fov > 0 ? cam.fov : 60;
-            const aspect = typeof cam.aspect === 'number' && cam.aspect > 0 ? cam.aspect : 1;
-            if (arrow !== null && glyph !== null) {
-              const indicator = offscreenSunIndicator(
-                [
-                  sceneCamera.quaternion.x,
-                  sceneCamera.quaternion.y,
-                  sceneCamera.quaternion.z,
-                  sceneCamera.quaternion.w,
-                ],
-                overlay.sun.position,
-                fov,
-                aspect,
-                0.12,
-                Math.max(params.rSunDeg, MIN_SUN_DISPLAY_DEG),
-              );
-              if (indicator === null) {
-                arrow.hidden = true;
-              } else {
-                arrow.hidden = false;
-                arrow.style.left = `${(indicator.x * 100).toFixed(2)}%`;
-                arrow.style.top = `${(indicator.y * 100).toFixed(2)}%`;
-                glyph.style.transform = `rotate(${indicator.angleDeg.toFixed(1)}deg)`;
-              }
-            }
-          }
-          raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-        setStatus('active');
-      } catch (err) {
-        if (!disposed && !exitingRef.current) {
-          // Tear the camera/session down so the error screen doesn't sit on top
-          // of a still-running camera stream (battery + privacy). Idempotent.
-          try {
-            session?.stop();
-          } catch {
-            // Teardown is best-effort; never mask the user-facing error.
-          }
-          Sentry.captureException(err, {
-            tags: { ar: 'start' },
-          });
-          setStatus('error');
-          setError(friendlyError(err instanceof Error ? err.message : String(err)));
-        }
-      }
-    };
-    void run();
-
+    const controller = createARController({
+      view,
+      canvas,
+      section: sectionRef.current,
+      arrow: arrowRef.current,
+      glyph: glyphRef.current,
+      headingSource,
+      loadEngine,
+      createSession,
+      callbacks: {
+        onStatus: (next) => setStatus(next),
+        onError: (message) => setError(message),
+        onCompass: updateCompass,
+      },
+    });
+    controllerRef.current = controller;
+    void controller.start();
     return () => {
-      disposed = true;
-      document.removeEventListener('visibilitychange', onResume);
-      cancelAnimationFrame(raf);
-      stopHeading?.();
-      overlay?.dispose();
-      session?.stop();
-      // XRExtras' FullWindowCanvas module moves the canvas into document.body on
-      // attach and never moves it back on detach. Restore it under the section so
-      // unmount doesn't leave a frozen last AR frame pinned over the results view.
-      if (canvas !== null && section !== null && canvas.parentElement !== section) {
-        section.appendChild(canvas);
-      }
+      controller.stop();
     };
+    // The controller is created once per mount; props that feed it (view,
+    // injectables) are captured at creation and the session never re-configures.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const recalibrate = async () => {
-    // Drop the captured yaw offset so the next accurate heading re-anchors to a
-    // fresh reading. Re-surface the (usually already-granted) orientation
-    // permission; on iOS this must run inside the button's user gesture.
-    yawOffsetRef.current = null;
-    updateCompass('requesting');
-    console.info(AR_LOG_PREFIX, 'recalibrate: cleared yaw offset, re-requesting permission');
-    const granted = await requestDeviceOrientationPermission(
-      engineWindow() as unknown as DeviceOrientationLike,
-    );
-    console.info(AR_LOG_PREFIX, `recalibrate: permission ${granted ? 'granted' : 'denied'}`);
-    updateCompass(granted ? 'waiting' : 'denied');
-  };
-
-  const restoreCanvas = () => {
-    // XRExtras' FullWindowCanvas module moves the canvas into document.body on
-    // attach and never moves it back on detach. Restore it under the section so
-    // React unmounts it with the component instead of leaving a frozen last AR
-    // frame pinned over the results view.
-    const canvas = canvasRef.current;
-    const section = sectionRef.current;
-    if (canvas !== null && section !== null && canvas.parentElement !== section) {
-      section.appendChild(canvas);
-    }
-  };
-
   const exitAR = () => {
     // Stop the engine and paint a black cover, then leave on the next frame so
-    // the last rendered AR frame never flashes over the results view. Mark the
-    // exit so a pending start() rejection (from the stop below) can't surface
-    // an error screen after 'exiting'.
-    exitingRef.current = true;
+    // the last rendered AR frame never flashes over the results view. The
+    // controller's stop() is idempotent and also restores the canvas under the
+    // section, so a pending start() rejection can't surface an error screen.
     setStatus('exiting');
-    sessionRef.current?.stop();
-    restoreCanvas();
+    controllerRef.current?.stop();
     requestAnimationFrame(() => onExitRef.current());
   };
 
@@ -383,7 +134,14 @@ export function ARView({
       {status === 'error' && (
         <div className="ar-error" role="alert">
           <p>{error ?? 'AR is unavailable in this browser.'}</p>
-          <button type="button" className="primary" onClick={() => { restoreCanvas(); onExitRef.current(); }}>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              controllerRef.current?.stop();
+              onExitRef.current();
+            }}
+          >
             Back to results
           </button>
         </div>
@@ -422,7 +180,11 @@ export function ARView({
           </div>
         )}
         {status === 'active' && compass !== 'aligned' && (
-          <button type="button" className="secondary" onClick={recalibrate}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => void controllerRef.current?.recalibrate()}
+          >
             Recalibrate compass
           </button>
         )}
@@ -432,44 +194,4 @@ export function ARView({
       </div>
     </section>
   );
-}
-
-function defaultSessionFactory(engine: EngineApiLike, canvas: HTMLCanvasElement): EngineSessionApi {
-  return createEngineSession({
-    engine,
-    canvas,
-    extraModules: fullWindowCanvasModules(window),
-  });
-}
-
-/**
- * The engine letterboxes the camera feed to a centered sub-rectangle of the
- * canvas by default; XRExtras' FullWindowCanvas module resizes the canvas to
- * fill the window (cover-cropping the feed) and re-runs on resize/orientation
- * changes. Loaded lazily because it lives in the xrextras bundle.
- */
-function fullWindowCanvasModules(win: Window): unknown[] {
-  const xrextras = (
-    win as unknown as {
-      XRExtras?: { FullWindowCanvas?: { pipelineModule?: () => unknown } };
-    }
-  ).XRExtras;
-  const module = xrextras?.FullWindowCanvas?.pipelineModule?.();
-  return module === undefined ? [] : [module];
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Timed out after ${ms} ms`)), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (reason) => {
-        clearTimeout(timer);
-        reject(reason);
-      },
-    );
-  });
 }

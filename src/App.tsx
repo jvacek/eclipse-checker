@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 
 import { EclipseCalculator } from './astro';
 import type { EclipseView, ObserverLocation } from './astro';
@@ -118,57 +119,60 @@ export default function App() {
   };
 
   return (
-    <main className="app">
-      <h1>Eclipse Checker</h1>
-      <p className="subtitle">Find the next solar eclipse visible from where you stand.</p>
+    <>
+      <main className="app">
+        <h1>Eclipse Checker</h1>
+        <p className="subtitle">Find the next solar eclipse visible from where you stand.</p>
 
-      {phase.kind === 'landing' && (
-        <Landing
-          locating={geolocation.pending}
-          onLocate={() => void locate()}
-          onManual={() => setPhase({ kind: 'manual' })}
-        />
-      )}
-
-      {phase.kind === 'locating' && <Status message="Requesting your location…" />}
-
-      {phase.kind === 'manual' && (
-        <ManualForm notice={phase.notice} onSubmit={submitManual} busy={false} />
-      )}
-
-      {phase.kind === 'error' && (
-        <>
-          <Status message={phase.message} tone="error" />
-          <ManualForm onSubmit={submitManual} busy={false} />
-        </>
-      )}
-
-      {phase.kind === 'results' && (
-        <div className="results-wrap">
-          <Results
-            view={phase.view}
-            shareUrl={shareUrlFor(phase.view)}
-            locationAccuracyMeters={phase.accuracyMeters}
-            onRestart={() => {
-              window.history.replaceState(null, '', window.location.pathname);
-              setPhase({ kind: 'landing' });
-            }}
-            onViewAr={() => void viewAr(phase.view)}
+        {phase.kind === 'landing' && (
+          <Landing
+            locating={geolocation.pending}
+            onLocate={() => void locate()}
+            onManual={() => setPhase({ kind: 'manual' })}
           />
-          <SkyMap view={phase.view} headingDeg={heading.headingDeg} />
-        </div>
-      )}
+        )}
 
-      {phase.kind === 'ar' && (
-        <ARView
-          view={phase.view}
-          headingAuthorized={phase.headingAuthorized}
-          onExit={() => {
-            setPhase({ kind: 'results', view: phase.view, accuracyMeters: null });
-          }}
-        />
-      )}
-    </main>
+        {phase.kind === 'locating' && <Status message="Requesting your location…" />}
+
+        {phase.kind === 'manual' && (
+          <ManualForm notice={phase.notice} onSubmit={submitManual} busy={false} />
+        )}
+
+        {phase.kind === 'error' && (
+          <>
+            <Status message={phase.message} tone="error" />
+            <ManualForm onSubmit={submitManual} busy={false} />
+          </>
+        )}
+
+        {phase.kind === 'results' && (
+          <div className="results-wrap">
+            <Results
+              view={phase.view}
+              shareUrl={shareUrlFor(phase.view)}
+              locationAccuracyMeters={phase.accuracyMeters}
+              onRestart={() => {
+                window.history.replaceState(null, '', window.location.pathname);
+                setPhase({ kind: 'landing' });
+              }}
+              onViewAr={() => void viewAr(phase.view)}
+            />
+            <SkyMap view={phase.view} headingDeg={heading.headingDeg} />
+          </div>
+        )}
+
+        {phase.kind === 'ar' && (
+          <ARView
+            view={phase.view}
+            headingAuthorized={phase.headingAuthorized}
+            onExit={() => {
+              setPhase({ kind: 'results', view: phase.view, accuracyMeters: null });
+            }}
+          />
+        )}
+      </main>
+      <Analytics />
+    </>
   );
 }
 

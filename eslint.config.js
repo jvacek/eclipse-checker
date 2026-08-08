@@ -5,7 +5,7 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage'] },
+  { ignores: ['dist', 'coverage', '**/external/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -25,6 +25,10 @@ export default tseslint.config(
   },
   {
     files: ['tests/**/*.ts'],
+    languageOptions: { globals: globals.node },
+  },
+  {
+    files: ['vite.config.ts', 'vite-external.ts'],
     languageOptions: { globals: globals.node },
   },
 );

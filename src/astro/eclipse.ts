@@ -21,7 +21,13 @@ import {
   magnitudeFromGeometry,
   positionAngleDeg,
 } from './geometry';
-import type { EclipseKind, EclipseEventLocal, EclipseView, ObserverLocation } from './types';
+import type {
+  EclipseKind,
+  EclipseEventLocal,
+  EclipseSample,
+  EclipseView,
+  ObserverLocation,
+} from './types';
 
 const SECONDS_PER_DAY = 86400;
 const DEFAULT_SEARCH_HORIZON_DAYS = 3650;
@@ -80,6 +86,34 @@ export const EclipseCalculator = {
     }
     return buildView(info, location, observer, opts);
   },
+
+  sampleAt(
+    time: FlexibleDateTime,
+    location: ObserverLocation,
+    options: EclipseCalculationOptions = {},
+  ): EclipseSample {
+    const opts = resolveOptions(options);
+    const observer = new Observer(location.lat, location.lon, location.heightMeters);
+    const timeObj = MakeTime(time);
+    const sun = getTopocentricHorizontal(Body.Sun, timeObj, observer, opts.refraction);
+    const moon = getTopocentricHorizontal(Body.Moon, timeObj, observer, opts.refraction);
+    const rSunDeg = getAngularRadiusDeg(SUN_RADIUS_METERS, sun.distanceAu);
+    const rMoonDeg = getAngularRadiusDeg(MOON_RADIUS_METERS, moon.distanceAu);
+    const separationDeg = angularSeparationDeg(sun.ra, sun.dec, moon.ra, moon.dec);
+    return {
+      utcIso: formatUtcIso(timeObj),
+      sunAltitudeDeg: sun.altitude,
+      sunAzimuthDeg: sun.azimuth,
+      moonAltitudeDeg: moon.altitude,
+      moonAzimuthDeg: moon.azimuth,
+      separationDeg,
+      positionAngleDeg: positionAngleDeg(sun.ra, sun.dec, moon.ra, moon.dec),
+      rSunDeg,
+      rMoonDeg,
+      magnitude: magnitudeFromGeometry(rSunDeg, rMoonDeg, separationDeg),
+      obscuration: circleOverlapFraction(rSunDeg, rMoonDeg, separationDeg),
+    };
+  },
 };
 
 function resolveOptions(options: EclipseCalculationOptions): ResolvedOptions {
@@ -135,6 +169,9 @@ function buildView(
     sunAltitudePeakDeg: sun.altitude,
     sunAzimuthPeakDeg: sun.azimuth,
     moonPositionAngleDeg: positionAngleDeg(sun.ra, sun.dec, moon.ra, moon.dec),
+    rSunDeg,
+    rMoonDeg,
+    separationDeg,
     observer: { ...location },
   };
 }

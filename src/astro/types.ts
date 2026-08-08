@@ -13,6 +13,20 @@ export interface EclipseEventLocal {
   sunAzimuthDeg: number;
 }
 
+export interface EclipseSample {
+  utcIso: string;
+  sunAltitudeDeg: number;
+  sunAzimuthDeg: number;
+  moonAltitudeDeg: number;
+  moonAzimuthDeg: number;
+  separationDeg: number;
+  positionAngleDeg: number;
+  rSunDeg: number;
+  rMoonDeg: number;
+  magnitude: number;
+  obscuration: number;
+}
+
 export interface EclipseView {
   kind: EclipseKind;
   eclipseDateIso: string;
@@ -29,5 +43,8 @@ export interface EclipseView {
   sunAltitudePeakDeg: number;
   sunAzimuthPeakDeg: number;
   moonPositionAngleDeg: number;
+  rSunDeg: number;
+  rMoonDeg: number;
+  separationDeg: number;
   observer: ObserverLocation;
 }

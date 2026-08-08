@@ -152,3 +152,33 @@ describe('EclipseCalculator.forLocation', () => {
     expect(view).toBeNull();
   });
 });
+
+describe('EclipseCalculator.sampleAt', () => {
+  it('matches the view fields when sampled at peak', () => {
+    const madrid = (fixture.locations as FixtureLocation[]).find((l) => l.name === 'Madrid')!;
+    const view = EclipseCalculator.forEclipseDate(fixture.eclipseDate, toLocation(madrid), {
+      refDate: REF_DATE,
+      timezone: madrid.timezone,
+    });
+    expect(view).not.toBeNull();
+    if (view === null) return;
+
+    const sample = EclipseCalculator.sampleAt(
+      new Date(view.times.peak.utcIso),
+      toLocation(madrid),
+      { refDate: REF_DATE, timezone: madrid.timezone },
+    );
+
+    expect(Math.abs(sample.sunAltitudeDeg - view.sunAltitudePeakDeg)).toBeLessThanOrEqual(
+      fixture.tolerances.sunAltitudeDeg,
+    );
+    expect(Math.abs(sample.sunAzimuthDeg - view.sunAzimuthPeakDeg)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(sample.magnitude - view.magnitude)).toBeLessThanOrEqual(
+      fixture.tolerances.magnitude,
+    );
+    expect(Math.abs(sample.obscuration - view.obscuration)).toBeLessThanOrEqual(
+      fixture.tolerances.obscuration,
+    );
+    expect(Math.abs(sample.positionAngleDeg - view.moonPositionAngleDeg)).toBeLessThanOrEqual(0.5);
+  });
+});

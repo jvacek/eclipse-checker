@@ -1,4 +1,5 @@
 import { DEG_TO_RAD, RAD_TO_DEG } from './constants';
+import { normalizeDeg } from '../lib/angles';
 
 export function angularSeparationDeg(
   ra1Hours: number,
@@ -70,8 +71,4 @@ export function circleOverlapFraction(r1: number, r2: number, distance: number):
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
-}
-
-function normalizeDeg(value: number): number {
-  return ((value % 360) + 360) % 360;
 }

@@ -191,6 +191,25 @@ button.link {
   max-width: 100%;
 }
 
+.sky-map-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.compass-toggle {
+  display: flex;
+  justify-content: flex-start;
+  min-height: 2.2rem;
+}
+
+.compass-on {
+  margin: 0;
+  padding: 0.55rem 0;
+  color: #4ade80;
+  font-size: 0.9rem;
+}
+
 .ar-view {
   position: fixed;
   inset: 0;

@@ -90,6 +90,7 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const geolocation = usePermission(geolocationRequestor);
   const [headingAuthorized, setHeadingAuthorized] = useState(false);
+  const [compassPending, setCompassPending] = useState(false);
   const heading = useHeading(headingAuthorized);
 
   useEffect(() => {
@@ -110,6 +111,22 @@ export default function App() {
 
   const submitManual = (location: ObserverLocation) => {
     setPhase(resultFromLocation(location, null));
+  };
+
+  // Activate the compass on the results screen (outside AR) so the sky map can
+  // show the heading marker right after locating, without entering the AR view
+  // first. Request the iOS permission inside the click gesture.
+  const enableCompass = async () => {
+    setCompassPending(true);
+    const granted = await requestDeviceOrientationPermission(window);
+    console.debug(
+      '[eclipse-checker:heading] enable: orientation permission',
+      granted ? 'granted' : 'denied',
+    );
+    setCompassPending(false);
+    if (granted) {
+      setHeadingAuthorized(true);
+    }
   };
 
   // Request the iOS deviceorientation permission inside the click gesture so the
@@ -169,7 +186,25 @@ export default function App() {
               }}
               onViewAr={() => void viewAr(phase.view)}
             />
-            <SkyMap view={phase.view} headingDeg={heading.headingDeg} />
+            <div className="sky-map-block">
+              <div className="compass-toggle">
+                {headingAuthorized ? (
+                  <p className="compass-on" role="status">
+                    Compass active
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => void enableCompass()}
+                    disabled={compassPending}
+                  >
+                    {compassPending ? 'Enabling…' : 'Activate compass'}
+                  </button>
+                )}
+              </div>
+              <SkyMap view={phase.view} headingDeg={heading.headingDeg} />
+            </div>
           </div>
         )}
 

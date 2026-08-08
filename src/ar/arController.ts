@@ -13,6 +13,7 @@ import {
 import {
   createSkyOverlay,
   placeSkySun,
+  setupSkyOverlay,
   MIN_SUN_DISPLAY_DEG,
   type SkyOverlay,
 } from './scene';
@@ -404,6 +405,9 @@ export function createARController(options: ARControllerOptions): ARController {
       }
       overlay = createSkyOverlay(xrScene.scene as THREE.Scene);
       sceneCamera = xrScene.camera as SkyCameraLike;
+      // The eclipse geometry (scale, disc shape, obscuration) is session-constant;
+      // apply it once so the rAF tick only rotates/positions the overlay.
+      setupSkyOverlay(overlay, params);
 
       let lastAccuracyEmitAt = 0;
       resetCalibration();

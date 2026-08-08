@@ -99,23 +99,14 @@ export function createSkyOverlay(scene: Scene): SkyOverlay {
   };
 }
 
-export function placeSkySun(overlay: SkyOverlay, params: SunSceneParams): void {
-  const placedAzimuth = northAlignedAzimuth(params.azimuthDeg, params.yawOffsetDeg);
-  const direction = sunDirectionVector(placedAzimuth, params.altitudeDeg);
-  overlay.sun.position.set(direction.x, direction.y, direction.z).multiplyScalar(SUN_DISTANCE);
-
-  // The bearing ring is built in the engine world frame (N at world azimuth 0),
-  // but the sun is placed at compass azimuth − yawOffset. Rotate the ring by
-  // +yawOffset about Y so N/E/S/W line up with the compass directions the sun
-  // is now placed against (N → world azimuth −yawOffset).
-  overlay.bearings.rotation.y = params.yawOffsetDeg * DEG_TO_RAD;
-
-  // World-anchor the disc (celestial north up) so the crescent rotates with the
-  // sky, not with the phone. +Z faces the observer because the plane sits on
-  // the camera→sun ray.
-  const orientation = sunDiscOrientation(placedAzimuth, params.altitudeDeg, params.latitudeDeg);
-  overlay.sun.quaternion.set(orientation[0], orientation[1], orientation[2], orientation[3]);
-
+/**
+ * Applies the session-constant eclipse geometry once (crescent scale, disc
+ * shape, obscuration) — these depend only on the fixed sun/moon params, so
+ * recomputing them on every rAF tick is wasted work. Call once after
+ * `createSkyOverlay`; the per-frame `placeSkySun` then only applies the
+ * yaw-dependent transforms.
+ */
+export function setupSkyOverlay(overlay: SkyOverlay, params: SunSceneParams): void {
   const displayDeg = Math.max(params.rSunDeg, MIN_SUN_DISPLAY_DEG);
   const worldRadius = SUN_DISTANCE * Math.tan(displayDeg * DEG_TO_RAD);
   overlay.crescent.scale.setScalar(Math.max(worldRadius, 1e-6) * GLOW_EXTENT);
@@ -130,6 +121,25 @@ export function placeSkySun(overlay: SkyOverlay, params: SunSceneParams): void {
     ),
   );
   overlay.crescent.material.uniforms.uObscuration.value = params.obscuration;
+}
+
+export function placeSkySun(overlay: SkyOverlay, params: SunSceneParams): void {
+  const placedAzimuth = northAlignedAzimuth(params.azimuthDeg, params.yawOffsetDeg);
+  const direction = sunDirectionVector(placedAzimuth, params.altitudeDeg);
+  overlay.sun.position.set(direction.x, direction.y, direction.z).multiplyScalar(SUN_DISTANCE);
+
+  // The bearing ring is built in the engine world frame (N at world azimuth 0),
+  // but the sun is placed at compass azimuth − yawOffset. Rotate the ring by
+  // +yawOffset about Y so N/E/S/W line up with the compass directions the sun
+  // is now placed against (N → world azimuth −yawOffset).
+  overlay.bearings.rotation.y = params.yawOffsetDeg * DEG_TO_RAD;
+
+  // World-anchor the disc (celestial north up) so the crescent rotates with the
+  // sky, not with the phone. +Z faces the observer because the plane sits on
+  // the camera→sun ray. The orientation depends on the (re-calibratable) yaw
+  // offset, so it stays in the per-frame pass.
+  const orientation = sunDiscOrientation(placedAzimuth, params.altitudeDeg, params.latitudeDeg);
+  overlay.sun.quaternion.set(orientation[0], orientation[1], orientation[2], orientation[3]);
 }
 
 function buildHorizonRing(): LineLoop {

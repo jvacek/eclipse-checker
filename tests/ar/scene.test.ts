@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createSkyOverlay,
   placeSkySun,
+  setupSkyOverlay,
   SUN_DISTANCE,
   MIN_SUN_DISPLAY_DEG,
   type SkyOverlay,
@@ -114,7 +115,7 @@ describe('placeSkySun', () => {
   it('sets the crescent material uniforms for the eclipse shape', () => {
     const scene = new Scene();
     const overlay = createSkyOverlay(scene);
-    placeSkySun(overlay, makeParams({ azimuthDeg: 90, altitudeDeg: 45, obscuration: 0.6 }));
+    setupSkyOverlay(overlay, makeParams({ azimuthDeg: 90, altitudeDeg: 45, obscuration: 0.6 }));
     const uniforms = overlay.crescent.material.uniforms as unknown as {
       uMoonOffset: { value: [number, number] };
       uMoonRadius: { value: number };
@@ -144,7 +145,7 @@ describe('placeSkySun', () => {
   it('enforces a minimum display size so the true-scale sun stays visible', () => {
     const scene = new Scene();
     const overlay = createSkyOverlay(scene);
-    placeSkySun(overlay, makeParams({ rSunDeg: 0.26 }));
+    setupSkyOverlay(overlay, makeParams({ rSunDeg: 0.26 }));
     expect(overlay.crescent.scale.x).toBeCloseTo(
       SUN_DISTANCE * Math.tan(MIN_SUN_DISPLAY_DEG * (Math.PI / 180)) * GLOW_EXTENT,
       6,
@@ -155,7 +156,7 @@ describe('placeSkySun', () => {
   it('scales the crescent with the sun radius above the display floor', () => {
     const scene = new Scene();
     const overlay = createSkyOverlay(scene);
-    placeSkySun(overlay, makeParams({ rSunDeg: 6 }));
+    setupSkyOverlay(overlay, makeParams({ rSunDeg: 6 }));
     expect(overlay.crescent.scale.x).toBeCloseTo(
       SUN_DISTANCE * Math.tan(6 * (Math.PI / 180)) * GLOW_EXTENT,
       6,

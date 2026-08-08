@@ -122,6 +122,27 @@ describe('EclipseCalculator.forEclipseDate — 2026-08-12 fixture', () => {
   }
 });
 
+describe('EclipseCalculator.forEclipseDate — past pinned date', () => {
+  it('returns a non-null view even when the eclipse is already past', () => {
+    const madrid = (fixture.locations as FixtureLocation[]).find((l) => l.name === 'Madrid')!;
+    const view = EclipseCalculator.forEclipseDate('2026-08-12', toLocation(madrid), {
+      refDate: new Date('2026-08-15T00:00:00Z'),
+      timezone: madrid.timezone,
+    });
+    expect(view).not.toBeNull();
+    expect(view?.eclipseDateIso).toBe('2026-08-12');
+  });
+
+  it('still rejects when the pinned date misses the found eclipse', () => {
+    const madrid = (fixture.locations as FixtureLocation[]).find((l) => l.name === 'Madrid')!;
+    const view = EclipseCalculator.forEclipseDate('2026-08-20', toLocation(madrid), {
+      refDate: new Date('2026-08-15T00:00:00Z'),
+      timezone: madrid.timezone,
+    });
+    expect(view).toBeNull();
+  });
+});
+
 describe('EclipseCalculator.forLocation', () => {
   it('finds the 2026-08-12 eclipse for Madrid', () => {
     const madrid = (fixture.locations as FixtureLocation[]).find((l) => l.name === 'Madrid')!;

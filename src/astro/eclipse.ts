@@ -62,7 +62,7 @@ export const EclipseCalculator = {
     const opts = resolveOptions(options);
     const observer = new Observer(location.lat, location.lon, location.heightMeters);
     const info = SearchLocalSolarEclipse(opts.refDate, observer);
-    return buildView(info, location, observer, opts);
+    return buildView(info, location, observer, opts, false);
   },
 
   forEclipseDate(
@@ -84,7 +84,7 @@ export const EclipseCalculator = {
     ) {
       return null;
     }
-    return buildView(info, location, observer, opts);
+    return buildView(info, location, observer, opts, true);
   },
 
   sampleAt(
@@ -130,13 +130,14 @@ function buildView(
   location: ObserverLocation,
   observer: Observer,
   opts: ResolvedOptions,
+  allowPast: boolean,
 ): EclipseView | null {
   const begin = info.partial_begin;
   const peakEvent = info.peak;
   const end = info.partial_end;
   const peak = peakEvent.time;
   const refUt = MakeTime(opts.refDate).ut;
-  if (peak.ut < refUt || peak.ut - refUt > opts.searchHorizonDays) {
+  if ((!allowPast && peak.ut < refUt) || peak.ut - refUt > opts.searchHorizonDays) {
     return null;
   }
 

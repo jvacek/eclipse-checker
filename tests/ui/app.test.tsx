@@ -57,6 +57,25 @@ describe('App landing', () => {
     expect(screen.getByRole('heading', { name: /Total eclipse — 2026-08-12/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Find my location' })).not.toBeInTheDocument();
   });
+
+  it('shows a passed notice for a past-eclipse share link', () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/?lat=64.1466&lon=-21.9426&height=61&eclipseDate=2026-08-12&kind=Total',
+    );
+    const realNow = Date.now;
+    Date.now = () => new Date('2026-08-20T00:00:00Z').getTime();
+    try {
+      render(<App />);
+      expect(
+        screen.getByRole('heading', { name: /Total eclipse — 2026-08-12/ }),
+      ).toBeInTheDocument();
+      expect(screen.getByText('This eclipse has already passed.')).toBeInTheDocument();
+    } finally {
+      Date.now = realNow;
+    }
+  });
 });
 
 describe('App manual flow', () => {

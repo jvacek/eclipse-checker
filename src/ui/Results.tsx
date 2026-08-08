@@ -2,6 +2,7 @@ import type { EclipseView } from '../astro';
 
 interface ResultsProps {
   view: EclipseView;
+  passed?: boolean;
   shareUrl: string;
   locationAccuracyMeters: number | null;
   onRestart: () => void;
@@ -10,6 +11,7 @@ interface ResultsProps {
 
 export function Results({
   view,
+  passed = false,
   shareUrl,
   locationAccuracyMeters,
   onRestart,
@@ -46,13 +48,21 @@ export function Results({
         </button>
       </div>
 
+      {passed && (
+        <p className="passed-notice" role="status">
+          This eclipse has already passed.
+        </p>
+      )}
+
       <dl className="results-dl">
         <dt>Peak</dt>
         <dd>
           {view.times.peak.localTime} local
-          {view.daysUntil > 0
-            ? ` · in ${view.daysUntil} day${view.daysUntil === 1 ? '' : 's'}`
-            : ' · today'}
+          {passed
+            ? ''
+            : view.daysUntil > 0
+              ? ` · in ${view.daysUntil} day${view.daysUntil === 1 ? '' : 's'}`
+              : ' · today'}
         </dd>
         <dt>Begin / End</dt>
         <dd>

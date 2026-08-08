@@ -22,7 +22,7 @@ type Phase =
   | { kind: 'landing' }
   | { kind: 'locating' }
   | { kind: 'manual'; notice?: string }
-  | { kind: 'results'; view: EclipseView; accuracyMeters: number | null }
+  | { kind: 'results'; view: EclipseView; accuracyMeters: number | null; passed: boolean }
   | { kind: 'ar'; view: EclipseView; headingAuthorized: boolean }
   | { kind: 'error'; message: string };
 
@@ -46,7 +46,8 @@ function resultFromLocation(
         message: 'No solar eclipse visible from this location within the 10-year search window.',
       };
     }
-    return { kind: 'results', view, accuracyMeters };
+    const passed = new Date(view.times.peak.utcIso).getTime() < Date.now();
+    return { kind: 'results', view, accuracyMeters, passed };
   } catch (err) {
     return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
   }
@@ -161,6 +162,7 @@ export default function App() {
           <div className="results-wrap">
             <Results
               view={phase.view}
+              passed={phase.passed}
               shareUrl={shareUrlFor(phase.view)}
               locationAccuracyMeters={phase.accuracyMeters}
               onRestart={() => {
@@ -178,7 +180,12 @@ export default function App() {
             view={phase.view}
             headingAuthorized={phase.headingAuthorized}
             onExit={() => {
-              setPhase({ kind: 'results', view: phase.view, accuracyMeters: null });
+              setPhase({
+                kind: 'results',
+                view: phase.view,
+                accuracyMeters: null,
+                passed: new Date(phase.view.times.peak.utcIso).getTime() < Date.now(),
+              });
             }}
           />
         )}

@@ -9,7 +9,12 @@ import {
   type EngineSessionApi,
 } from '../ar/engineSession';
 import { createBrowserEngineLoader, type EngineWindowLike } from '../ar/engineLoader';
-import { northAlignYawOffsetDeg, offscreenSunIndicator, smoothHeadingDeg } from '../ar/math';
+import {
+  northAlignYawOffsetDeg,
+  offscreenSunIndicator,
+  signedAngleDeltaDeg,
+  smoothHeadingDeg,
+} from '../ar/math';
 import { createSkyOverlay, placeSkySun, MIN_SUN_DISPLAY_DEG, type SkyOverlay } from '../ar/scene';
 import {
   HeadingTracker,
@@ -28,6 +33,14 @@ const HEADING_LOG_INTERVAL_MS = 1000;
  * after the app returns from being backgrounded), so the fix is not trusted.
  */
 const COMPASS_ACCURACY_LIMIT_DEG = 15;
+/** Re-anchor the heading fix to a fresh reading on this cadence. */
+const COMPASS_REQUERY_INTERVAL_MS = 1000;
+/**
+ * Only re-anchor when the fresh reading has diverged this far from the current
+ * fix, so a stable compass doesn't get re-jumped by sub-degree magnetometer
+ * noise at each re-query tick.
+ */
+const COMPASS_REANCHOR_DELTA_DEG = 3;
 
 function accuracyOk(accuracyDeg: number | null): boolean {
   // Android reports no accuracy, so nothing to gate on.
@@ -214,6 +227,7 @@ export function ARView({
         sceneCamera = xrScene.camera as SkyCameraLike;
 
         let lastHeadingLogAt = 0;
+        let lastCompassRequeryAt = 0;
         stopHeading = heading.start(({ headingDeg, absolute, accuracyDeg }) => {
           const now = Date.now();
           if (absolute && headingDeg !== null && accuracyOk(accuracyDeg)) {
@@ -232,6 +246,22 @@ export function ARView({
             // Smooth magnetometer jitter so the sun doesn't jump around while
             // the compass ring (world-anchored) stays put.
             headingDegRef.current = smoothHeadingDeg(headingDegRef.current, headingDeg);
+            // Every second, re-query the compass: snap to the freshest accurate
+            // reading so a re-calibrated or slowly-shifting magnetometer can't
+            // leave the smoothed fix (and with it the sun) drifting off the
+            // ring. Skipped when the reading hasn't moved, to keep sub-degree
+            // noise from causing a jump at each re-query tick.
+            if (now - lastCompassRequeryAt >= COMPASS_REQUERY_INTERVAL_MS) {
+              lastCompassRequeryAt = now;
+              const delta = signedAngleDeltaDeg(headingDegRef.current, headingDeg);
+              if (Math.abs(delta) > COMPASS_REANCHOR_DELTA_DEG) {
+                console.debug(
+                  AR_LOG_PREFIX,
+                  `re-anchored compass to ${headingDeg.toFixed(1)}° (delta ${delta.toFixed(1)}°)`,
+                );
+                headingDegRef.current = headingDeg;
+              }
+            }
             updateCompass('aligned');
           } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
             lastHeadingLogAt = now;

@@ -307,6 +307,81 @@ describe('ARView (8th Wall engine)', () => {
     });
   });
 
+  it('re-queries the compass every second and snaps to the fresh accurate reading', async () => {
+    const { orientation, sky } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+    });
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+
+    // A second later the magnetometer has re-baselined: the fresh reading is
+    // now 100°. The 1s re-query must snap to it instead of EMA-blending (which
+    // on this single event would only reach 92.5°).
+    nowSpy.mockReturnValue(2200);
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 100,
+      webkitCompassAccuracy: 2,
+    });
+
+    const sun = sky.scene.children[0];
+    const az = (280 - 100) * (Math.PI / 180);
+    const alt = 7 * (Math.PI / 180);
+    await waitFor(() => {
+      expect(sun.position.x).toBeCloseTo(Math.sin(az) * Math.cos(alt) * SUN_DISTANCE, 4);
+      expect(sun.position.z).toBeCloseTo(-Math.cos(az) * Math.cos(alt) * SUN_DISTANCE, 4);
+    });
+  });
+
+  it('does not re-jump the fix for sub-degree noise at the re-query tick', async () => {
+    const { orientation, sky } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+    });
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+
+    // Next re-query tick: fresh reading differs by 1° (well under the 3° snap
+    // threshold), so the EMA keeps smoothing instead of hard-snapping.
+    nowSpy.mockReturnValue(2200);
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 91,
+      webkitCompassAccuracy: 2,
+    });
+
+    const sun = sky.scene.children[0];
+    const az = (280 - 90.25) * (Math.PI / 180);
+    const alt = 7 * (Math.PI / 180);
+    await waitFor(() => {
+      expect(sun.position.x).toBeCloseTo(Math.sin(az) * Math.cos(alt) * SUN_DISTANCE, 3);
+      expect(sun.position.z).toBeCloseTo(-Math.cos(az) * Math.cos(alt) * SUN_DISTANCE, 3);
+    });
+  });
+
   it('recalibrate clears the fix and re-aligns on the next heading event', async () => {
     const { orientation } = renderActive();
     const section = document.querySelector('.ar-view');

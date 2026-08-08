@@ -1,4 +1,5 @@
 import type { EclipseView } from '../astro';
+import { verdictFor } from '../lib/verdict';
 
 interface ResultsProps {
   view: EclipseView;
@@ -17,10 +18,7 @@ export function Results({
   onRestart,
   onViewAr,
 }: ResultsProps) {
-  const visibility =
-    view.sunAltitudePeakDeg > 0
-      ? 'The Sun will be above the horizon at peak.'
-      : 'The Sun will be below the horizon at peak — the eclipse will not be visible.';
+  const verdict = verdictFor(view);
 
   const share = async () => {
     if (typeof navigator.share === 'function') {
@@ -84,7 +82,7 @@ export function Results({
           {view.sunAzimuthPeakDeg.toFixed(1)}°
         </dd>
         <dt>Verdict</dt>
-        <dd>{visibility}</dd>
+        <dd data-tier={verdict.tier}>{verdict.text}</dd>
       </dl>
 
       {locationAccuracyMeters !== null && (

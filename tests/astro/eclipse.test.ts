@@ -209,10 +209,14 @@ describe('EclipseCalculator.forEclipseDate — 2027-02-06 annular fixture', () =
   const REF = new Date('2027-02-05T00:00:00Z');
 
   it('reports kind/times/magnitude/obscuration for the annular path', () => {
-    const view = EclipseCalculator.forEclipseDate(annularFixture.eclipseDate, toLocation(location), {
-      refDate: REF,
-      timezone: location.timezone,
-    });
+    const view = EclipseCalculator.forEclipseDate(
+      annularFixture.eclipseDate,
+      toLocation(location),
+      {
+        refDate: REF,
+        timezone: location.timezone,
+      },
+    );
     expect(view).not.toBeNull();
     if (view === null) return;
 
@@ -234,20 +238,28 @@ describe('EclipseCalculator.forEclipseDate — 2027-02-06 annular fixture', () =
   it('agrees with astronomy-engine obscuration within 0.005', () => {
     const observer = toObserver(location);
     const info = SearchLocalSolarEclipse(REF, observer);
-    const view = EclipseCalculator.forEclipseDate(annularFixture.eclipseDate, toLocation(location), {
-      refDate: REF,
-      timezone: location.timezone,
-    });
+    const view = EclipseCalculator.forEclipseDate(
+      annularFixture.eclipseDate,
+      toLocation(location),
+      {
+        refDate: REF,
+        timezone: location.timezone,
+      },
+    );
     expect(view).not.toBeNull();
     if (view === null) return;
     expect(Math.abs(view.obscuration - info.obscuration)).toBeLessThan(0.005);
   });
 
   it('does NOT report full obscuration for an annular eclipse (regression guard)', () => {
-    const view = EclipseCalculator.forEclipseDate(annularFixture.eclipseDate, toLocation(location), {
-      refDate: REF,
-      timezone: location.timezone,
-    });
+    const view = EclipseCalculator.forEclipseDate(
+      annularFixture.eclipseDate,
+      toLocation(location),
+      {
+        refDate: REF,
+        timezone: location.timezone,
+      },
+    );
     expect(view).not.toBeNull();
     if (view === null) return;
     expect(view.obscuration).toBeLessThan(1);

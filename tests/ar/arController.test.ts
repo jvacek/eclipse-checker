@@ -103,11 +103,10 @@ function makeController(options: {
 }) {
   const dom = options.dom ?? makeDom();
   const engine = options.engine ?? makeFakeEngine();
-  const session =
-    options.session ?? {
-      start: () => Promise.resolve({ scene: new Scene(), camera: { quaternion: new Quaternion() } }),
-      stop: vi.fn(),
-    };
+  const session = options.session ?? {
+    start: () => Promise.resolve({ scene: new Scene(), camera: { quaternion: new Quaternion() } }),
+    stop: vi.fn(),
+  };
   const onStatus = options.onStatus ?? vi.fn();
   const onError = options.onError ?? vi.fn();
   const onCompass = options.onCompass ?? vi.fn();
@@ -392,7 +391,10 @@ describe('createARController', () => {
     });
     expect(onCompass).toHaveBeenCalledWith('aligned');
     await vi.waitFor(() => {
-      expect(sun.position.x).toBeCloseTo(Math.sin((280 - 100) * (Math.PI / 180)) * Math.cos(alt) * SUN_DISTANCE, 4);
+      expect(sun.position.x).toBeCloseTo(
+        Math.sin((280 - 100) * (Math.PI / 180)) * Math.cos(alt) * SUN_DISTANCE,
+        4,
+      );
     });
 
     controller.stop();
@@ -401,9 +403,7 @@ describe('createARController', () => {
   it('waits for the engine world frame to settle before capturing a trusted offset', async () => {
     const dom = makeDom();
     const sky = new Scene();
-    let onTrackingStatus:
-      | ((tracking: { status: string; reason: string }) => void)
-      | undefined;
+    let onTrackingStatus: ((tracking: { status: string; reason: string }) => void) | undefined;
     const session = {
       start: () => Promise.resolve({ scene: sky, camera: { quaternion: new Quaternion() } }),
       stop: vi.fn(),
@@ -460,9 +460,7 @@ describe('createARController', () => {
   it('drops the captured offset when the engine re-establishes its world frame', async () => {
     const dom = makeDom();
     const sky = new Scene();
-    let onTrackingStatus:
-      | ((tracking: { status: string; reason: string }) => void)
-      | undefined;
+    let onTrackingStatus: ((tracking: { status: string; reason: string }) => void) | undefined;
     const session = {
       start: () => Promise.resolve({ scene: sky, camera: { quaternion: new Quaternion() } }),
       stop: vi.fn(),

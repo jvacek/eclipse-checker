@@ -18,7 +18,7 @@
     "London magnitude is not published by NASA/timeanddate; assert times and obscuration only.",
     "Sydney is the negative case: the eclipse is not visible there; expect EclipseView null.",
     "Madrid's partial phase ends after sunset; NASA publishes 21:16 CEST (ends-at-sunset variant 21:19). The geometric end per astronomy-engine is ~21:24 CEST, so Madrid uses partialEndToleranceMin: 10.",
-    "Position angles (PA) not yet asserted; extract from NASA per-eclipse local-circumstances tables if needed."
+    "Position angles (PA) are NOT asserted against NASA values: this fixture carries no per-city NASA PA references, and the PA formula (Meeus ch. 54) is already unit-tested in tests/astro/geometry.test.ts with tolerance ±0.5° (plus a sampleAt↔view agreement check in eclipse.test.ts). If authoritative per-city PA values become available, add them here and assert to ±5°."
   ],
   "locations": [
     {

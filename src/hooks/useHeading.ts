@@ -9,7 +9,10 @@ import { HeadingTracker, type HeadingData } from '../sensors';
  * log "No device orientation events will be fired" and never deliver events.
  * Keep it disabled until the user has granted permission (via the AR entry).
  */
-export function useHeading(enabled: boolean, screenAngle: () => number = defaultScreenAngle): HeadingData {
+export function useHeading(
+  enabled: boolean,
+  screenAngle: () => number = defaultScreenAngle,
+): HeadingData {
   const [heading, setHeading] = useState<HeadingData>({
     headingDeg: null,
     absolute: true,

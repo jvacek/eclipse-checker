@@ -165,14 +165,26 @@ describe('createEngineSession', () => {
     const sceneModule = findSceneModule(modules)!;
     expect(sceneModule.onUpdate).toBeDefined();
     // Initialising frame: reported once.
-    sceneModule.onUpdate!({ processCpuResult: { reality: { trackingStatus: 'LIMITED', trackingReason: 'INITIALIZING' } } });
-    expect(onTrackingStatus).toHaveBeenNthCalledWith(1, { status: 'LIMITED', reason: 'INITIALIZING' });
+    sceneModule.onUpdate!({
+      processCpuResult: { reality: { trackingStatus: 'LIMITED', trackingReason: 'INITIALIZING' } },
+    });
+    expect(onTrackingStatus).toHaveBeenNthCalledWith(1, {
+      status: 'LIMITED',
+      reason: 'INITIALIZING',
+    });
     // Same status repeated: not re-reported.
-    sceneModule.onUpdate!({ processCpuResult: { reality: { trackingStatus: 'LIMITED', trackingReason: 'INITIALIZING' } } });
+    sceneModule.onUpdate!({
+      processCpuResult: { reality: { trackingStatus: 'LIMITED', trackingReason: 'INITIALIZING' } },
+    });
     expect(onTrackingStatus).toHaveBeenCalledTimes(1);
     // Settled frame: reported once.
-    sceneModule.onUpdate!({ processCpuResult: { reality: { trackingStatus: 'NORMAL', trackingReason: 'UNSPECIFIED' } } });
-    expect(onTrackingStatus).toHaveBeenNthCalledWith(2, { status: 'NORMAL', reason: 'UNSPECIFIED' });
+    sceneModule.onUpdate!({
+      processCpuResult: { reality: { trackingStatus: 'NORMAL', trackingReason: 'UNSPECIFIED' } },
+    });
+    expect(onTrackingStatus).toHaveBeenNthCalledWith(2, {
+      status: 'NORMAL',
+      reason: 'UNSPECIFIED',
+    });
   });
 
   it('ignores onUpdate frames that carry no reality result', () => {

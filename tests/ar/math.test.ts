@@ -111,25 +111,13 @@ describe('offscreenSunIndicator', () => {
   });
 
   it('points right at the right margin for a sun to the east', () => {
-    const result = offscreenSunIndicator(
-      IDENTITY,
-      sunDirectionVector(90, 0),
-      FOV,
-      ASPECT,
-      MARGIN,
-    )!;
+    const result = offscreenSunIndicator(IDENTITY, sunDirectionVector(90, 0), FOV, ASPECT, MARGIN)!;
     expect(result.x).toBeCloseTo(1 - MARGIN, 4);
     expect(result.angleDeg).toBeCloseTo(90, 4);
   });
 
   it('points up at the top margin for a sun overhead', () => {
-    const result = offscreenSunIndicator(
-      IDENTITY,
-      sunDirectionVector(0, 60),
-      FOV,
-      ASPECT,
-      MARGIN,
-    )!;
+    const result = offscreenSunIndicator(IDENTITY, sunDirectionVector(0, 60), FOV, ASPECT, MARGIN)!;
     expect(result.y).toBeCloseTo(MARGIN, 4);
     expect(result.angleDeg).toBeCloseTo(0, 4);
   });
@@ -192,9 +180,7 @@ describe('offscreenSunIndicator', () => {
 
 describe('sunDiscOrientation', () => {
   function apply(q: QuaternionTuple, v: { x: number; y: number; z: number }): Vector3 {
-    return new Vector3(v.x, v.y, v.z).applyQuaternion(
-      new Quaternion(q[0], q[1], q[2], q[3]),
-    );
+    return new Vector3(v.x, v.y, v.z).applyQuaternion(new Quaternion(q[0], q[1], q[2], q[3]));
   }
 
   it('anchors the disc to celestial north at the zenith (lat 0, sun overhead)', () => {

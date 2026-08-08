@@ -189,8 +189,8 @@ export function ARView({
           {compass !== 'aligned' && compass !== 'denied' && (
             <p className="ar-compass-hint">
               Move the phone in a figure-8 (∞) motion for a few seconds to calibrate the
-              magnetometer — accuracy improves as you do this. Keep away from magnetic phone
-              cases, mounts, and metal.
+              magnetometer — accuracy improves as you do this. Keep away from magnetic phone cases,
+              mounts, and metal.
             </p>
           )}
         </>

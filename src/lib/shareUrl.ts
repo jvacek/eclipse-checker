@@ -41,9 +41,7 @@ function isValidIsoDate(value: string): boolean {
     return false;
   }
   const date = new Date(Date.UTC(y, m - 1, d));
-  return (
-    date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d
-  );
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
 }
 
 export function buildShareUrl(base: string, params: ShareParams): string {

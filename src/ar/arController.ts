@@ -2,14 +2,19 @@ import * as Sentry from '@sentry/react';
 import * as THREE from 'three';
 
 import type { EclipseView } from '../astro';
-import { HeadingTracker, requestDeviceOrientationPermission, type DeviceOrientationLike } from '../sensors';
-import { createBrowserEngineLoader, type EngineWindowLike } from './engineLoader';
-import { createEngineSession, type EngineApiLike, type EngineSessionApi, type EngineTrackingStatus } from './engineSession';
 import {
-  cameraForwardAzimuthDeg,
-  northAlignYawOffsetDeg,
-  offscreenSunIndicator,
-} from './math';
+  HeadingTracker,
+  requestDeviceOrientationPermission,
+  type DeviceOrientationLike,
+} from '../sensors';
+import { createBrowserEngineLoader, type EngineWindowLike } from './engineLoader';
+import {
+  createEngineSession,
+  type EngineApiLike,
+  type EngineSessionApi,
+  type EngineTrackingStatus,
+} from './engineSession';
+import { cameraForwardAzimuthDeg, northAlignYawOffsetDeg, offscreenSunIndicator } from './math';
 import {
   createSkyOverlay,
   placeSkySun,
@@ -258,7 +263,11 @@ export function createARController(options: ARControllerOptions): ARController {
   };
 
   /** Snapshots the engine-world→compass-north rotation from the current camera. */
-  const captureOffset = (headingDeg: number, accuracyDeg: number | null, provisional: boolean): void => {
+  const captureOffset = (
+    headingDeg: number,
+    accuracyDeg: number | null,
+    provisional: boolean,
+  ): void => {
     if (sceneCamera === null) {
       return;
     }
@@ -339,7 +348,12 @@ export function createARController(options: ARControllerOptions): ARController {
         prev !== null && prev.status !== next.status ? ` (was ${prev.status})` : ''
       }`,
     );
-    if (prev !== null && next.status === 'NORMAL' && prev.status !== 'NORMAL' && yawOffsetDeg !== null) {
+    if (
+      prev !== null &&
+      next.status === 'NORMAL' &&
+      prev.status !== 'NORMAL' &&
+      yawOffsetDeg !== null
+    ) {
       console.warn(
         AR_LOG_PREFIX,
         'engine re-established its world frame; captured compass offset is stale — dropping and re-anchoring on the next accurate heading',
@@ -435,8 +449,7 @@ export function createARController(options: ARControllerOptions): ARController {
         // meaningful until world tracking settles to NORMAL. Capturing the
         // compass offset against an initializing frame freezes a wrong north
         // for the whole session.
-        const trackingSettled =
-          trackingStatus === null || trackingStatus.status === 'NORMAL';
+        const trackingSettled = trackingStatus === null || trackingStatus.status === 'NORMAL';
 
         if (yawOffsetDeg === null) {
           if (accurate && trackingSettled) {

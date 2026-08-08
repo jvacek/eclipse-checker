@@ -143,11 +143,7 @@ export function sunDiscOrientation(
 }
 
 /** Quaternion (x, y, z, w) from an orthonormal right-handed basis of column axes. */
-function quaternionFromBasis(
-  x: Direction3,
-  y: Direction3,
-  z: Direction3,
-): QuaternionTuple {
+function quaternionFromBasis(x: Direction3, y: Direction3, z: Direction3): QuaternionTuple {
   const m00 = x.x;
   const m01 = y.x;
   const m02 = z.x;

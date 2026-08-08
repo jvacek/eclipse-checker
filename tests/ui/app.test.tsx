@@ -79,10 +79,12 @@ describe('App landing', () => {
 });
 
 describe('App manual flow', () => {
-  it('computes results from the manual form defaults', async () => {
+  it('computes results from the manual form', async () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole('button', { name: 'Enter coordinates manually' }));
+    await user.type(screen.getByLabelText(/Latitude/), '40.4168');
+    await user.type(screen.getByLabelText(/Longitude/), '-3.7038');
     await user.click(screen.getByRole('button', { name: 'Show eclipse' }));
 
     expect(screen.getByRole('heading', { name: /eclipse —/ })).toBeInTheDocument();

@@ -17,5 +17,6 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
+      - run: npx prettier --check "src/**/*.{ts,tsx,css,html}" "tests/**/*.ts"
       - run: npm test
       - run: npm run build

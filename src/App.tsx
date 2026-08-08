@@ -147,9 +147,7 @@ export default function App() {
 
         {phase.kind === 'locating' && <Status message="Requesting your location…" />}
 
-        {phase.kind === 'manual' && (
-          <ManualForm notice={phase.notice} onSubmit={submitManual} />
-        )}
+        {phase.kind === 'manual' && <ManualForm notice={phase.notice} onSubmit={submitManual} />}
 
         {phase.kind === 'error' && (
           <>

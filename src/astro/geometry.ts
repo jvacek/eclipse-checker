@@ -45,7 +45,7 @@ export function circleOverlapFraction(r1: number, r2: number, distance: number):
   if (distance <= Math.abs(r2 - r1)) {
     // One disc fully contains the other. Obscuration is the area ratio, not 1 —
     // for an annular eclipse (moon < sun) that's (rMoon/rSun)².
-    return (Math.min(r1, r2) ** 2) / (r1 * r1);
+    return Math.min(r1, r2) ** 2 / (r1 * r1);
   }
   const a1 = Math.acos(
     clamp((r1 * r1 + distance * distance - r2 * r2) / (2 * r1 * distance), -1, 1),

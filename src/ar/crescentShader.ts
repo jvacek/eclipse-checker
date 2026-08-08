@@ -22,6 +22,7 @@ const float GLOW_EXTENT = 2.0;
 void main() {
   vec2 p = (vUv * 2.0 - 1.0) * GLOW_EXTENT;
   float dSun = length(p);
+  // fwidth is WebGL2-only; the 8th Wall AR engine always runs on WebGL2.
   float aa = fwidth(dSun) * 1.5;   // screen-space AA: crisp at any size
 
   // halo: wide soft glow + a corona ring hugging the limb

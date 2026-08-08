@@ -71,7 +71,13 @@ export const EclipseCalculator = {
     options: EclipseCalculationOptions = {},
   ): EclipseView | null {
     const opts = resolveOptions(options);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(eclipseDateIso)) {
+      return null;
+    }
     const targetStart = new Date(`${eclipseDateIso}T00:00:00Z`);
+    if (Number.isNaN(targetStart.getTime())) {
+      return null;
+    }
     const searchStart = new Date(
       targetStart.getTime() - PRE_ECLIPSE_SEARCH_LEAD_DAYS * SECONDS_PER_DAY * 1000,
     );

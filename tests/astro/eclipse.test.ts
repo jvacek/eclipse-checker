@@ -36,11 +36,11 @@ function timeDiffMinutes(a: string, b: string): number {
   return Math.abs(toMinutes(a) - toMinutes(b));
 }
 
-function toLocation(location: FixtureLocation): ObserverLocation {
+function toLocation(location: { lat: number; lon: number; height: number }): ObserverLocation {
   return { lat: location.lat, lon: location.lon, heightMeters: location.height };
 }
 
-function toObserver(location: FixtureLocation): Observer {
+function toObserver(location: { lat: number; lon: number; height: number }): Observer {
   return new Observer(location.lat, location.lon, location.height);
 }
 
@@ -140,6 +140,20 @@ describe('EclipseCalculator.forEclipseDate — past pinned date', () => {
       timezone: madrid.timezone,
     });
     expect(view).toBeNull();
+  });
+
+  it('returns null for a malformed date', () => {
+    const madrid = (fixture.locations as FixtureLocation[]).find((l) => l.name === 'Madrid')!;
+    expect(
+      EclipseCalculator.forEclipseDate('notadate', toLocation(madrid), {
+        refDate: new Date('2026-08-15T00:00:00Z'),
+      }),
+    ).toBeNull();
+    expect(
+      EclipseCalculator.forEclipseDate('2026-02-30', toLocation(madrid), {
+        refDate: new Date('2026-08-15T00:00:00Z'),
+      }),
+    ).toBeNull();
   });
 });
 

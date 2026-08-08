@@ -13,7 +13,12 @@ import {
 
 import { DEG_TO_RAD } from '../astro/constants';
 import { applyEclipseDiscGeometry, createCrescentMaterial, GLOW_EXTENT } from './crescentShader';
-import { eclipseDiscGeometry, northAlignedAzimuth, sunDirectionVector } from './math';
+import {
+  eclipseDiscGeometry,
+  northAlignedAzimuth,
+  sunDiscOrientation,
+  sunDirectionVector,
+} from './math';
 
 export const SUN_DISTANCE = 30;
 
@@ -24,6 +29,7 @@ export interface SunSceneParams {
   azimuthDeg: number;
   altitudeDeg: number;
   yawOffsetDeg: number;
+  latitudeDeg: number;
   rSunDeg: number;
   rMoonDeg: number;
   separationDeg: number;
@@ -94,11 +100,15 @@ export function createSkyOverlay(scene: Scene): SkyOverlay {
 }
 
 export function placeSkySun(overlay: SkyOverlay, params: SunSceneParams): void {
-  const direction = sunDirectionVector(
-    northAlignedAzimuth(params.azimuthDeg, params.yawOffsetDeg),
-    params.altitudeDeg,
-  );
+  const placedAzimuth = northAlignedAzimuth(params.azimuthDeg, params.yawOffsetDeg);
+  const direction = sunDirectionVector(placedAzimuth, params.altitudeDeg);
   overlay.sun.position.set(direction.x, direction.y, direction.z).multiplyScalar(SUN_DISTANCE);
+
+  // World-anchor the disc (celestial north up) so the crescent rotates with the
+  // sky, not with the phone. +Z faces the observer because the plane sits on
+  // the camera→sun ray.
+  const orientation = sunDiscOrientation(placedAzimuth, params.altitudeDeg, params.latitudeDeg);
+  overlay.sun.quaternion.set(orientation[0], orientation[1], orientation[2], orientation[3]);
 
   const displayDeg = Math.max(params.rSunDeg, MIN_SUN_DISPLAY_DEG);
   const worldRadius = SUN_DISTANCE * Math.tan(displayDeg * DEG_TO_RAD);

@@ -1,4 +1,4 @@
-import { LineSegments, Scene } from 'three';
+import { LineSegments, Scene, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -15,6 +15,7 @@ function makeParams(overrides: Partial<Parameters<typeof placeSkySun>[1]> = {}) 
     azimuthDeg: 180,
     altitudeDeg: 30,
     yawOffsetDeg: 0,
+    latitudeDeg: 40,
     rSunDeg: 0.26,
     rMoonDeg: 0.27,
     separationDeg: 0.13,
@@ -76,9 +77,24 @@ describe('placeSkySun', () => {
       uMoonRadius: { value: number };
       uObscuration: { value: number };
     };
-    expect(uniforms.uMoonOffset.value[0]).toBeCloseTo(0.5, 4);
+    // positionAngleDeg 90 = celestial east, rendered at the observer's left.
+    expect(uniforms.uMoonOffset.value[0]).toBeCloseTo(-0.5, 4);
     expect(uniforms.uMoonRadius.value).toBeCloseTo(0.27 / 0.26, 4);
     expect(uniforms.uObscuration.value).toBe(0.6);
+    overlay.dispose();
+  });
+
+  it('world-anchors the sun disc so its +Z faces the observer', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    placeSkySun(overlay, makeParams({ azimuthDeg: 180, altitudeDeg: 30, yawOffsetDeg: 0 }));
+    // Local +Z of the group must point back at the camera (the origin): the
+    // opposite of the sun's position direction.
+    const z = new Vector3(0, 0, 1).applyQuaternion(overlay.sun.quaternion);
+    const dir = overlay.sun.position.clone().normalize();
+    expect(z.x).toBeCloseTo(-dir.x, 4);
+    expect(z.y).toBeCloseTo(-dir.y, 4);
+    expect(z.z).toBeCloseTo(-dir.z, 4);
     overlay.dispose();
   });
 

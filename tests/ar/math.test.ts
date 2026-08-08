@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { Quaternion, Vector3 } from 'three';
 
 import {
   eclipseDiscGeometry,
@@ -6,8 +7,9 @@ import {
   northAlignYawOffsetDeg,
   normalizeDeg,
   offscreenSunIndicator,
-  smoothHeadingDeg,
   sunDirectionVector,
+  sunDiscOrientation,
+  type QuaternionTuple,
 } from '../../src/ar/math';
 
 describe('normalizeDeg', () => {
@@ -73,8 +75,19 @@ describe('eclipseDiscGeometry', () => {
 
   it('offsets the moon along the position angle', () => {
     const g = eclipseDiscGeometry(0.26, 0.27, 0.13, 90);
-    expect(g.moonOffsetX).toBeCloseTo(0.5, 4);
+    // PA 90 = celestial east, which sits at the observer's left (local -X):
+    // the offset's X component is negative.
+    expect(g.moonOffsetX).toBeCloseTo(-0.5, 4);
     expect(g.moonOffsetY).toBeCloseTo(0, 4);
+  });
+
+  it('offsets PA 0 toward celestial north (local +Y) and PA 270 toward west (+X)', () => {
+    const north = eclipseDiscGeometry(0.26, 0.27, 0.13, 0);
+    expect(north.moonOffsetX).toBeCloseTo(0, 4);
+    expect(north.moonOffsetY).toBeCloseTo(0.5, 4);
+    const west = eclipseDiscGeometry(0.26, 0.27, 0.13, 270);
+    expect(west.moonOffsetX).toBeCloseTo(0.5, 4);
+    expect(west.moonOffsetY).toBeCloseTo(0, 4);
   });
 
   it('returns zero geometry for a degenerate sun radius', () => {
@@ -177,20 +190,53 @@ describe('offscreenSunIndicator', () => {
   });
 });
 
-describe('smoothHeadingDeg', () => {
-  it('seeds with the raw heading when there is no previous value', () => {
-    expect(smoothHeadingDeg(null, 90)).toBe(90);
+describe('sunDiscOrientation', () => {
+  function apply(q: QuaternionTuple, v: { x: number; y: number; z: number }): Vector3 {
+    return new Vector3(v.x, v.y, v.z).applyQuaternion(
+      new Quaternion(q[0], q[1], q[2], q[3]),
+    );
+  }
+
+  it('anchors the disc to celestial north at the zenith (lat 0, sun overhead)', () => {
+    const q = sunDiscOrientation(0, 90, 0);
+    const north = apply(q, { x: 0, y: 1, z: 0 });
+    expect(north.x).toBeCloseTo(0, 5);
+    expect(north.y).toBeCloseTo(0, 5);
+    expect(north.z).toBeCloseTo(-1, 5);
+    const west = apply(q, { x: 1, y: 0, z: 0 });
+    expect(west.x).toBeCloseTo(-1, 5);
+    expect(west.y).toBeCloseTo(0, 5);
+    const towardObserver = apply(q, { x: 0, y: 0, z: 1 });
+    expect(towardObserver.y).toBeCloseTo(-1, 5);
   });
 
-  it('blends small sensor jitter toward the raw value', () => {
-    expect(smoothHeadingDeg(90, 92, 0.25, 20)).toBeCloseTo(90.5, 4);
+  it('keeps the front face toward the observer (local +Z = -sun direction)', () => {
+    const az = 180;
+    const alt = 30;
+    const q = sunDiscOrientation(az, alt, 40);
+    const s = sunDirectionVector(az, alt);
+    const z = apply(q, { x: 0, y: 0, z: 1 });
+    expect(z.x).toBeCloseTo(-s.x, 5);
+    expect(z.y).toBeCloseTo(-s.y, 5);
+    expect(z.z).toBeCloseTo(-s.z, 5);
   });
 
-  it('wraps the blend across 0°/360°', () => {
-    expect(smoothHeadingDeg(359, 2, 0.25, 20)).toBeCloseTo(359.75, 4);
+  it('produces a unit right-handed rotation for an arbitrary sun position', () => {
+    const q = sunDiscOrientation(220, 35, 41);
+    const x = apply(q, { x: 1, y: 0, z: 0 });
+    const y = apply(q, { x: 0, y: 1, z: 0 });
+    const z = apply(q, { x: 0, y: 0, z: 1 });
+    expect(new Quaternion(q[0], q[1], q[2], q[3]).length()).toBeCloseTo(1, 5);
+    const cross = new Vector3().crossVectors(x, y);
+    expect(cross.distanceTo(z)).toBeCloseTo(0, 4);
+    // local +Y is celestial north: perpendicular to the sun direction
+    const s = sunDirectionVector(220, 35);
+    const dot = y.dot(s);
+    expect(dot).toBeCloseTo(0, 5);
   });
 
-  it('snaps to a deliberate turn', () => {
-    expect(smoothHeadingDeg(90, 200, 0.25, 20)).toBe(200);
+  it('returns a unit quaternion when celestial north is degenerate (sun at the pole)', () => {
+    const q = sunDiscOrientation(0, 90, 90);
+    expect(new Quaternion(q[0], q[1], q[2], q[3]).length()).toBeCloseTo(1, 5);
   });
 });

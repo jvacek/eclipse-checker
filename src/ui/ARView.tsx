@@ -12,8 +12,6 @@ import { createBrowserEngineLoader, type EngineWindowLike } from '../ar/engineLo
 import {
   northAlignYawOffsetDeg,
   offscreenSunIndicator,
-  signedAngleDeltaDeg,
-  smoothHeadingDeg,
 } from '../ar/math';
 import { createSkyOverlay, placeSkySun, MIN_SUN_DISPLAY_DEG, type SkyOverlay } from '../ar/scene';
 import {
@@ -33,14 +31,6 @@ const HEADING_LOG_INTERVAL_MS = 1000;
  * after the app returns from being backgrounded), so the fix is not trusted.
  */
 const COMPASS_ACCURACY_LIMIT_DEG = 15;
-/** Re-anchor the heading fix to a fresh reading on this cadence. */
-const COMPASS_REQUERY_INTERVAL_MS = 1000;
-/**
- * Only re-anchor when the fresh reading has diverged this far from the current
- * fix, so a stable compass doesn't get re-jumped by sub-degree magnetometer
- * noise at each re-query tick.
- */
-const COMPASS_REANCHOR_DELTA_DEG = 3;
 
 function accuracyOk(accuracyDeg: number | null): boolean {
   // Android reports no accuracy, so nothing to gate on.
@@ -144,7 +134,8 @@ export function ARView({
   const arrowRef = useRef<HTMLDivElement>(null);
   const glyphRef = useRef<SVGSVGElement>(null);
   const onExitRef = useRef(onExit);
-  const headingDegRef = useRef<number | null>(null);
+  /** Engine-frame yaw offset from compass north; null until an accurate heading fix. */
+  const yawOffsetRef = useRef<number | null>(null);
   const sessionRef = useRef<EngineSessionApi | null>(null);
   const exitingRef = useRef(false);
 
@@ -180,6 +171,7 @@ export function ARView({
     const params = {
       azimuthDeg: view.sunAzimuthPeakDeg,
       altitudeDeg: view.sunAltitudePeakDeg,
+      latitudeDeg: view.observer.lat,
       rSunDeg: view.rSunDeg,
       rMoonDeg: view.rMoonDeg,
       separationDeg: view.separationDeg,
@@ -197,13 +189,13 @@ export function ARView({
     const heading = new HeadingTracker(source);
 
     // An app switch stops deviceorientation events while backgrounded. When the
-    // app comes back the magnetometer is usually mid-recalibration, so the
-    // first fix can be off. Drop the smoothed fix and snap to a fresh,
-    // accuracy-gated reading instead of EMA-blending a stale bias in.
+    // app comes back the magnetometer is usually mid-recalibration, so the first
+    // fix can be off. Drop the yaw offset so the next accurate heading
+    // re-establishes it from a fresh camera orientation.
     const onResume = () => {
-      if (document.visibilityState === 'visible' && headingDegRef.current !== null) {
+      if (document.visibilityState === 'visible' && yawOffsetRef.current !== null) {
         console.info(AR_LOG_PREFIX, 'app foregrounded; re-anchoring compass');
-        headingDegRef.current = null;
+        yawOffsetRef.current = null;
       }
     };
     document.addEventListener('visibilitychange', onResume);
@@ -228,40 +220,28 @@ export function ARView({
         sceneCamera = xrScene.camera as SkyCameraLike;
 
         let lastHeadingLogAt = 0;
-        let lastCompassRequeryAt = 0;
         stopHeading = heading.start(({ headingDeg, absolute, accuracyDeg }) => {
           const now = Date.now();
           if (absolute && headingDeg !== null && accuracyOk(accuracyDeg)) {
-            if (headingDegRef.current === null) {
+            // The engine world frame is fixed for the session, so the offset
+            // between compass north and that frame is a constant — capture it
+            // once per fix (first fix, foreground re-anchor, or explicit
+            // recalibrate) and hold it, instead of re-deriving it per frame
+            // where magnetometer noise would shake the sun.
+            if (yawOffsetRef.current === null && sceneCamera !== null) {
+              yawOffsetRef.current = northAlignYawOffsetDeg(
+                [
+                  sceneCamera.quaternion.x,
+                  sceneCamera.quaternion.y,
+                  sceneCamera.quaternion.z,
+                  sceneCamera.quaternion.w,
+                ],
+                headingDeg,
+              );
               console.info(
                 AR_LOG_PREFIX,
                 `heading fix acquired: ${headingDeg.toFixed(1)}° (accuracy ${String(accuracyDeg)})`,
               );
-            } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
-              console.debug(
-                AR_LOG_PREFIX,
-                `heading fix: ${headingDeg.toFixed(1)}° (accuracy ${String(accuracyDeg)})`,
-              );
-            }
-            lastHeadingLogAt = now;
-            // Smooth magnetometer jitter so the sun doesn't jump around while
-            // the compass ring (world-anchored) stays put.
-            headingDegRef.current = smoothHeadingDeg(headingDegRef.current, headingDeg);
-            // Every second, re-query the compass: snap to the freshest accurate
-            // reading so a re-calibrated or slowly-shifting magnetometer can't
-            // leave the smoothed fix (and with it the sun) drifting off the
-            // ring. Skipped when the reading hasn't moved, to keep sub-degree
-            // noise from causing a jump at each re-query tick.
-            if (now - lastCompassRequeryAt >= COMPASS_REQUERY_INTERVAL_MS) {
-              lastCompassRequeryAt = now;
-              const delta = signedAngleDeltaDeg(headingDegRef.current, headingDeg);
-              if (Math.abs(delta) > COMPASS_REANCHOR_DELTA_DEG) {
-                console.debug(
-                  AR_LOG_PREFIX,
-                  `re-anchored compass to ${headingDeg.toFixed(1)}° (delta ${delta.toFixed(1)}°)`,
-                );
-                headingDegRef.current = headingDeg;
-              }
             }
             updateCompass('aligned');
           } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
@@ -277,24 +257,8 @@ export function ARView({
 
         const tick = () => {
           if (overlay !== null && sceneCamera !== null) {
-            if (headingDegRef.current !== null) {
-              params.yawOffsetDeg = northAlignYawOffsetDeg(
-                [
-                  sceneCamera.quaternion.x,
-                  sceneCamera.quaternion.y,
-                  sceneCamera.quaternion.z,
-                  sceneCamera.quaternion.w,
-                ],
-                headingDegRef.current,
-              );
-            }
+            params.yawOffsetDeg = yawOffsetRef.current ?? 0;
             placeSkySun(overlay, params);
-            overlay.sun.quaternion.set(
-              sceneCamera.quaternion.x,
-              sceneCamera.quaternion.y,
-              sceneCamera.quaternion.z,
-              sceneCamera.quaternion.w,
-            );
 
             const arrow = arrowRef.current;
             const glyph = glyphRef.current;
@@ -366,12 +330,12 @@ export function ARView({
   }, []);
 
   const recalibrate = async () => {
-    // Drop the current compass fix so the next frame re-anchors to a fresh
-    // heading. Re-surface the (usually already-granted) orientation permission;
-    // on iOS this must run inside the button's user gesture.
-    headingDegRef.current = null;
+    // Drop the captured yaw offset so the next accurate heading re-anchors to a
+    // fresh reading. Re-surface the (usually already-granted) orientation
+    // permission; on iOS this must run inside the button's user gesture.
+    yawOffsetRef.current = null;
     updateCompass('requesting');
-    console.info(AR_LOG_PREFIX, 'recalibrate: cleared heading fix, re-requesting permission');
+    console.info(AR_LOG_PREFIX, 'recalibrate: cleared yaw offset, re-requesting permission');
     const granted = await requestDeviceOrientationPermission(
       engineWindow() as unknown as DeviceOrientationLike,
     );

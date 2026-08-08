@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { EclipseCalculator } from '../../src/astro/eclipse';
 import type { ObserverLocation } from '../../src/astro/types';
 import fixture from '../fixtures/2026-08-12-nasa.json';
+import annularFixture from '../fixtures/2027-02-06-annular.json';
 
 const REF_DATE = new Date('2026-08-11T00:00:00Z');
 
@@ -150,6 +151,71 @@ describe('EclipseCalculator.forLocation', () => {
       { refDate: REF_DATE, searchHorizonDays: 1 },
     );
     expect(view).toBeNull();
+  });
+});
+
+interface AnnularFixtureLocation {
+  name: string;
+  lat: number;
+  lon: number;
+  height: number;
+  timezone: string;
+  expected: {
+    kind: string;
+    peakUtcIso: string;
+    magnitude: number;
+    obscuration: number;
+  };
+}
+
+describe('EclipseCalculator.forEclipseDate — 2027-02-06 annular fixture', () => {
+  const location = (annularFixture.locations as AnnularFixtureLocation[])[0];
+  const expected = location.expected;
+  const REF = new Date('2027-02-05T00:00:00Z');
+
+  it('reports kind/times/magnitude/obscuration for the annular path', () => {
+    const view = EclipseCalculator.forEclipseDate(annularFixture.eclipseDate, toLocation(location), {
+      refDate: REF,
+      timezone: location.timezone,
+    });
+    expect(view).not.toBeNull();
+    if (view === null) return;
+
+    expect(view.kind).toBe('Annular');
+    expect(view.eclipseDateIso).toBe(annularFixture.eclipseDate);
+    const peakMs = new Date(view.times.peak.utcIso).getTime();
+    const expectedMs = new Date(expected.peakUtcIso).getTime();
+    expect(Math.abs(peakMs - expectedMs) / 60000).toBeLessThanOrEqual(
+      annularFixture.tolerances.peakTimeMin,
+    );
+    expect(Math.abs(view.magnitude - expected.magnitude)).toBeLessThanOrEqual(
+      annularFixture.tolerances.magnitude,
+    );
+    expect(Math.abs(view.obscuration - expected.obscuration)).toBeLessThanOrEqual(
+      annularFixture.tolerances.obscuration,
+    );
+  });
+
+  it('agrees with astronomy-engine obscuration within 0.005', () => {
+    const observer = toObserver(location);
+    const info = SearchLocalSolarEclipse(REF, observer);
+    const view = EclipseCalculator.forEclipseDate(annularFixture.eclipseDate, toLocation(location), {
+      refDate: REF,
+      timezone: location.timezone,
+    });
+    expect(view).not.toBeNull();
+    if (view === null) return;
+    expect(Math.abs(view.obscuration - info.obscuration)).toBeLessThan(0.005);
+  });
+
+  it('does NOT report full obscuration for an annular eclipse (regression guard)', () => {
+    const view = EclipseCalculator.forEclipseDate(annularFixture.eclipseDate, toLocation(location), {
+      refDate: REF,
+      timezone: location.timezone,
+    });
+    expect(view).not.toBeNull();
+    if (view === null) return;
+    expect(view.obscuration).toBeLessThan(1);
   });
 });
 

@@ -68,6 +68,20 @@ describe('circleOverlapFraction', () => {
     expect(circleOverlapFraction(1, 2, 0)).toBe(1);
   });
 
+  it('returns the area ratio when the moon is smaller (annular)', () => {
+    expect(circleOverlapFraction(2, 1, 0)).toBe(0.25);
+  });
+
+  it('returns 1 for a total eclipse (moon larger, centered)', () => {
+    expect(circleOverlapFraction(1, 2, 0)).toBe(1);
+  });
+
+  it('returns a partial-overlap fraction strictly between 0 and 1', () => {
+    const f = circleOverlapFraction(1, 1, 0.5);
+    expect(f).toBeGreaterThan(0.5);
+    expect(f).toBeLessThan(1);
+  });
+
   it('returns 0.391 for equal unit circles offset by their radius', () => {
     expect(circleOverlapFraction(1, 1, 1)).toBeCloseTo(0.391, 3);
   });

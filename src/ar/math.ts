@@ -77,5 +77,3 @@ export function northAlignYawOffsetDeg(
 ): number {
   return normalizeDeg(compassHeadingDeg - cameraForwardAzimuthDeg(cameraQuaternion));
 }
-
-

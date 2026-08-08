@@ -10,10 +10,17 @@ import {
 import { createBrowserEngineLoader, type EngineWindowLike } from '../ar/engineLoader';
 import { northAlignYawOffsetDeg } from '../ar/math';
 import { createSkyOverlay, placeSkySun, type SkyOverlay } from '../ar/scene';
-import { HeadingTracker, requestDeviceOrientationPermission, type DeviceOrientationLike } from '../sensors';
+import {
+  HeadingTracker,
+  requestDeviceOrientationPermission,
+  type DeviceOrientationLike,
+} from '../sensors';
 
 const XR_ENGINE_LICENSE_URL = 'https://github.com/8thwall/engine/blob/main/LICENSE';
 const AR_START_TIMEOUT_MS = 30_000;
+const AR_LOG_PREFIX = '[eclipse-checker:ar]';
+/** Heading events fire at display rate; sample the debug log. */
+const HEADING_LOG_INTERVAL_MS = 1000;
 
 type CompassState = 'requesting' | 'waiting' | 'aligned' | 'denied';
 
@@ -114,6 +121,16 @@ export function ARView({
   const [status, setStatus] = useState<'starting' | 'active' | 'error'>('starting');
   const [error, setError] = useState<string | null>(null);
   const [compass, setCompass] = useState<CompassState>(headingAuthorized ? 'waiting' : 'denied');
+  const compassRef = useRef<CompassState>(compass);
+
+  /** setCompass + a console breadcrumb so state transitions are visible while debugging. */
+  const updateCompass = (next: CompassState) => {
+    if (compassRef.current !== next) {
+      console.info(AR_LOG_PREFIX, `compass state: ${compassRef.current} -> ${next}`);
+      compassRef.current = next;
+    }
+    setCompass(next);
+  };
 
   useEffect(() => {
     onExitRef.current = onExit;
@@ -165,10 +182,24 @@ export function ARView({
         overlay = createSkyOverlay(xrScene.scene as THREE.Scene);
         sceneCamera = xrScene.camera as SkyCameraLike;
 
+        let lastHeadingLogAt = 0;
         stopHeading = heading.start(({ headingDeg, absolute }) => {
+          const now = Date.now();
           if (absolute && headingDeg !== null) {
+            if (headingDegRef.current === null) {
+              console.info(AR_LOG_PREFIX, `heading fix acquired: ${headingDeg.toFixed(1)}°`);
+            } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
+              console.debug(AR_LOG_PREFIX, `heading fix: ${headingDeg.toFixed(1)}°`);
+            }
+            lastHeadingLogAt = now;
             headingDegRef.current = headingDeg;
-            setCompass('aligned');
+            updateCompass('aligned');
+          } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
+            lastHeadingLogAt = now;
+            console.debug(
+              AR_LOG_PREFIX,
+              `ignoring heading event (absolute=${String(absolute)}, headingDeg=${String(headingDeg)})`,
+            );
           }
         });
 
@@ -221,11 +252,13 @@ export function ARView({
     // heading. Re-surface the (usually already-granted) orientation permission;
     // on iOS this must run inside the button's user gesture.
     headingDegRef.current = null;
-    setCompass('requesting');
+    updateCompass('requesting');
+    console.info(AR_LOG_PREFIX, 'recalibrate: cleared heading fix, re-requesting permission');
     const granted = await requestDeviceOrientationPermission(
       engineWindow() as unknown as DeviceOrientationLike,
     );
-    setCompass(granted ? 'waiting' : 'denied');
+    console.info(AR_LOG_PREFIX, `recalibrate: permission ${granted ? 'granted' : 'denied'}`);
+    updateCompass(granted ? 'waiting' : 'denied');
   };
 
   return (

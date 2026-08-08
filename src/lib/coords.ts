@@ -36,4 +36,3 @@ export function parseCoordinate(input: string): number | null {
   const magnitude = Math.abs(degrees) + minutes / 60 + seconds / 3600;
   return negative || degrees < 0 ? -magnitude : magnitude;
 }
-

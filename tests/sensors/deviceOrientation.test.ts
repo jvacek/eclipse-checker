@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   compassHeading,
   createOrientationRequestor,
   HeadingTracker,
+  requestDeviceOrientationPermission,
   type DeviceOrientationEventLike,
   type DeviceOrientationLike,
 } from '../../src/sensors/deviceOrientation';
@@ -71,6 +72,40 @@ describe('HeadingTracker', () => {
     expect(onHeading).toHaveBeenLastCalledWith({ headingDeg: 44, absolute: true });
   });
 
+  it('treats webkitCompassHeading as absolute even though iOS reports absolute: false', () => {
+    const source = makeSource();
+    const tracker = new HeadingTracker(source);
+    const onHeading = vi.fn();
+    tracker.start(onHeading);
+
+    // iOS Safari always reports absolute: false on deviceorientation events;
+    // the webkit compass heading is earth-referenced regardless.
+    source.listeners[0]({
+      alpha: 99,
+      beta: 0,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: 44,
+    });
+    expect(onHeading).toHaveBeenLastCalledWith({ headingDeg: 44, absolute: true });
+  });
+
+  it('ignores a non-finite webkitCompassHeading and falls back to alpha', () => {
+    const source = makeSource();
+    const tracker = new HeadingTracker(source);
+    const onHeading = vi.fn();
+    tracker.start(onHeading);
+
+    source.listeners[0]({
+      alpha: 90,
+      beta: 0,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: Number.NaN,
+    });
+    expect(onHeading).toHaveBeenLastCalledWith({ headingDeg: 270, absolute: true });
+  });
+
   it('emits null heading when alpha is unavailable', () => {
     const source = makeSource();
     const tracker = new HeadingTracker(source);
@@ -93,5 +128,62 @@ describe('createOrientationRequestor', () => {
       requestPermission: async () => 'denied',
     } as never);
     await expect(requestor.request()).rejects.toMatchObject({ reason: 'user-denied' });
+  });
+});
+
+describe('requestDeviceOrientationPermission', () => {
+  afterEach(() => {
+    delete (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent;
+  });
+
+  function windowLike(): DeviceOrientationLike {
+    // Real windows have the listener APIs but no requestPermission of their own.
+    return {
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+  }
+
+  it('falls back to the DeviceOrientationEvent static, as on iOS', async () => {
+    const requestPermission = vi.fn(async () => 'granted');
+    (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent = {
+      requestPermission,
+    };
+
+    await expect(requestDeviceOrientationPermission(windowLike())).resolves.toBe(true);
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+  });
+
+  it('prefers the source’s own requestPermission over the global static', async () => {
+    const globalRequest = vi.fn(async () => 'denied' as const);
+    (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent = {
+      requestPermission: globalRequest,
+    };
+    const sourceRequest = vi.fn(async () => 'granted' as const);
+
+    const source: DeviceOrientationLike = { ...windowLike(), requestPermission: sourceRequest };
+    await expect(requestDeviceOrientationPermission(source)).resolves.toBe(true);
+    expect(sourceRequest).toHaveBeenCalledTimes(1);
+    expect(globalRequest).not.toHaveBeenCalled();
+  });
+
+  it('resolves true when no permission API exists', async () => {
+    await expect(requestDeviceOrientationPermission(windowLike())).resolves.toBe(true);
+  });
+
+  it('resolves false when the iOS prompt is refused', async () => {
+    (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent = {
+      requestPermission: async () => 'denied',
+    };
+    await expect(requestDeviceOrientationPermission(windowLike())).resolves.toBe(false);
+  });
+
+  it('resolves false when the prompt throws (e.g. outside a user gesture)', async () => {
+    (globalThis as { DeviceOrientationEvent?: unknown }).DeviceOrientationEvent = {
+      requestPermission: async () => {
+        throw new Error('user gesture required');
+      },
+    };
+    await expect(requestDeviceOrientationPermission(windowLike())).resolves.toBe(false);
   });
 });

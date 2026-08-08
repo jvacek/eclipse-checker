@@ -221,6 +221,54 @@ describe('ARView (8th Wall engine)', () => {
     expect(screen.getByText(/Compass aligned/i)).toHaveAttribute('data-state', 'aligned');
   });
 
+  it('aligns from iOS events, which always report absolute: false', async () => {
+    const { orientation } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    // iOS Safari delivers the earth-referenced heading via webkitCompassHeading
+    // while event.absolute stays false.
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: 90,
+    });
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+  });
+
+  it('recalibrate clears the fix and re-aligns on the next heading event', async () => {
+    const { orientation } = renderActive();
+    const section = document.querySelector('.ar-view');
+    await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
+
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: 90,
+    });
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: /Recalibrate compass/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(/Point your phone north to align the compass/i),
+      ).toBeInTheDocument(),
+    );
+
+    orientation.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: false,
+      webkitCompassHeading: 42,
+    });
+    await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
+  });
+
   it('reports compass permission denied without a heading fix', async () => {
     const { engine } = makeFakeEngine();
     const sky = makeSkyScene();

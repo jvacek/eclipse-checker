@@ -33,4 +33,3 @@ describe('parseCoordinate', () => {
     expect(parseCoordinate('1°2\'3"4"')).toBeNull();
   });
 });
-

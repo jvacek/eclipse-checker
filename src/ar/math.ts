@@ -1,12 +1,8 @@
 import { DEG_TO_RAD } from '../astro/constants';
+import { normalizeDeg, RAD_TO_DEG } from '../lib/angles';
+export { normalizeDeg } from '../lib/angles';
 
 export type QuaternionTuple = [number, number, number, number];
-
-export function normalizeDeg(value: number): number {
-  return ((value % 360) + 360) % 360;
-}
-
-const RAD_TO_DEG = 180 / Math.PI;
 
 export function northAlignedAzimuth(azimuthDeg: number, yawOffsetDeg: number): number {
   return normalizeDeg(azimuthDeg - yawOffsetDeg);

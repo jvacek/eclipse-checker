@@ -3,20 +3,18 @@ import { useState } from 'react';
 import { parseCoordinate } from '../lib/coords';
 
 interface ManualFormProps {
-  initial?: { lat: number; lon: number; heightMeters: number };
   notice?: string;
   onSubmit: (location: { lat: number; lon: number; heightMeters: number }) => void;
-  busy: boolean;
 }
 
 const DEFAULT_LAT = '40.4168';
 const DEFAULT_LON = '-3.7038';
 const DEFAULT_HEIGHT = '667';
 
-export function ManualForm({ initial, notice, onSubmit, busy }: ManualFormProps) {
-  const [lat, setLat] = useState(initial ? String(initial.lat) : DEFAULT_LAT);
-  const [lon, setLon] = useState(initial ? String(initial.lon) : DEFAULT_LON);
-  const [height, setHeight] = useState(initial ? String(initial.heightMeters) : DEFAULT_HEIGHT);
+export function ManualForm({ notice, onSubmit }: ManualFormProps) {
+  const [lat, setLat] = useState(DEFAULT_LAT);
+  const [lon, setLon] = useState(DEFAULT_LON);
+  const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const [error, setError] = useState<string | null>(null);
 
   const submit = (event: React.FormEvent) => {
@@ -64,9 +62,7 @@ export function ManualForm({ initial, notice, onSubmit, busy }: ManualFormProps)
           {error}
         </p>
       )}
-      <button type="submit" disabled={busy}>
-        {busy ? 'Computing…' : 'Show eclipse'}
-      </button>
+      <button type="submit">Show eclipse</button>
     </form>
   );
 }

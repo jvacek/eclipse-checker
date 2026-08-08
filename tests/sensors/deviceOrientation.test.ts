@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   compassHeading,
-  createOrientationRequestor,
   HeadingTracker,
   requestDeviceOrientationPermission,
   type DeviceOrientationEventLike,
@@ -155,20 +154,6 @@ describe('HeadingTracker', () => {
       absolute: true,
       accuracyDeg: null,
     });
-  });
-});
-
-describe('createOrientationRequestor', () => {
-  it('resolves without a prompt when requestPermission is not required', async () => {
-    const requestor = createOrientationRequestor({ addEventListener: () => undefined } as never);
-    await expect(requestor.request()).resolves.toBeUndefined();
-  });
-
-  it('throws user-denied when the iOS prompt is refused', async () => {
-    const requestor = createOrientationRequestor({
-      requestPermission: async () => 'denied',
-    } as never);
-    await expect(requestor.request()).rejects.toMatchObject({ reason: 'user-denied' });
   });
 });
 

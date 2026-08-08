@@ -93,6 +93,8 @@ export const EclipseCalculator = {
     return buildView(info, location, observer, opts, true);
   },
 
+  // @todo Not currently surfaced in the UI; kept as the scrubber primitive for
+  // the per-time-of-day slider. Do not delete — it is unit-tested.
   sampleAt(
     time: FlexibleDateTime,
     location: ObserverLocation,

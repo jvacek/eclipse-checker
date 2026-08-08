@@ -9,7 +9,6 @@ export { createGeolocationRequestor } from './geolocation';
 export type { GeolocationData, GeolocationLike, GeolocationPositionLike } from './geolocation';
 export {
   compassHeading,
-  createOrientationRequestor,
   HeadingTracker,
   requestDeviceOrientationPermission,
 } from './deviceOrientation';

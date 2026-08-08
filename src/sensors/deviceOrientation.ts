@@ -1,4 +1,4 @@
-import { PermissionError, type PermissionRequestor } from './permission';
+import { normalizeDeg } from '../lib/angles';
 
 const LOG_PREFIX = '[eclipse-checker:heading]';
 
@@ -45,10 +45,6 @@ export function compassHeading(
   return normalizeDeg(360 - (alphaDeg + screenAngleDeg));
 }
 
-function normalizeDeg(value: number): number {
-  return ((value % 360) + 360) % 360;
-}
-
 type OrientationPermissionApi = () => Promise<string>;
 
 /**
@@ -93,25 +89,6 @@ export async function requestDeviceOrientationPermission(
     console.debug(LOG_PREFIX, 'permission request threw', err);
     return false;
   }
-}
-
-export function createOrientationRequestor(
-  source: DeviceOrientationLike = window,
-): PermissionRequestor<void> {
-  return {
-    fallbackAvailable: false,
-    isSupported: () => source !== undefined,
-    request: async () => {
-      const api = permissionApiFor(source);
-      if (api === undefined) {
-        return;
-      }
-      const result = await api();
-      if (result !== 'granted') {
-        throw new PermissionError('user-denied');
-      }
-    },
-  };
 }
 
 export class HeadingTracker {

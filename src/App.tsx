@@ -1,133 +1,181 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { EclipseCalculator } from './astro';
-import type { EclipseView } from './astro';
+import type { EclipseView, ObserverLocation } from './astro';
+import { useHeading } from './hooks/useHeading';
+import { usePermission } from './hooks/usePermission';
+import { buildShareUrl, parseShareParams } from './lib/shareUrl';
+import {
+  createGeolocationRequestor,
+  requestDeviceOrientationPermission,
+  type GeolocationData,
+} from './sensors';
+import { ARView } from './ui/ARView';
+import { Landing } from './ui/Landing';
+import { ManualForm } from './ui/ManualForm';
+import { Results } from './ui/Results';
+import { SkyMap } from './ui/SkyMap';
+import { Status } from './ui/Status';
 
-interface FormState {
-  lat: string;
-  lon: string;
-  height: string;
-  refDate: string;
+type Phase =
+  | { kind: 'landing' }
+  | { kind: 'locating' }
+  | { kind: 'manual'; notice?: string }
+  | { kind: 'results'; view: EclipseView; accuracyMeters: number | null }
+  | { kind: 'ar'; view: EclipseView; headingAuthorized: boolean }
+  | { kind: 'error'; message: string };
+
+function computeFor(location: ObserverLocation, eclipseDate?: string): EclipseView | null {
+  const options = { refDate: new Date() };
+  return eclipseDate !== undefined
+    ? EclipseCalculator.forEclipseDate(eclipseDate, location, options)
+    : EclipseCalculator.forLocation(location, options);
 }
 
-const DEFAULT_FORM: FormState = {
-  lat: '40.4168',
-  lon: '-3.7038',
-  height: '667',
-  refDate: '2026-08-11',
+function resultFromLocation(
+  location: ObserverLocation,
+  accuracyMeters: number | null,
+  eclipseDate?: string,
+): Phase {
+  try {
+    const view = computeFor(location, eclipseDate);
+    if (view === null) {
+      return {
+        kind: 'error',
+        message: 'No solar eclipse visible from this location within the 10-year search window.',
+      };
+    }
+    return { kind: 'results', view, accuracyMeters };
+  } catch (err) {
+    return { kind: 'error', message: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function initialPhase(): Phase {
+  if (typeof window === 'undefined') {
+    return { kind: 'landing' };
+  }
+  const params = parseShareParams(window.location.search);
+  if (params === null) {
+    return { kind: 'landing' };
+  }
+  return resultFromLocation(
+    { lat: params.lat, lon: params.lon, heightMeters: params.heightMeters },
+    null,
+    params.eclipseDate,
+  );
+}
+
+const DENIAL_NOTICE: Record<string, string> = {
+  unsupported: 'Location is not available in this browser. Enter coordinates manually.',
+  'user-denied': 'Location permission was denied. Enter coordinates manually.',
+  error: 'Could not get your location. Enter coordinates manually.',
 };
 
+const geolocationRequestor = createGeolocationRequestor();
+
+function shareUrlFor(view: EclipseView): string {
+  return buildShareUrl(window.location.href, {
+    lat: view.observer.lat,
+    lon: view.observer.lon,
+    heightMeters: view.observer.heightMeters,
+    eclipseDate: view.eclipseDateIso,
+    kind: view.kind,
+  });
+}
+
 export default function App() {
-  const [form, setForm] = useState<FormState>(DEFAULT_FORM);
-  const [view, setView] = useState<EclipseView | null | undefined>(undefined);
-  const [error, setError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<Phase>(initialPhase);
+  const geolocation = usePermission(geolocationRequestor);
+  const heading = useHeading();
 
-  const update = (field: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((prev) => ({ ...prev, [field]: event.target.value }));
-
-  const compute = () => {
-    setError(null);
-    try {
-      const location = {
-        lat: Number(form.lat),
-        lon: Number(form.lon),
-        heightMeters: Number(form.height),
-      };
-      if (!Number.isFinite(location.lat) || !Number.isFinite(location.lon)) {
-        setView(undefined);
-        setError('Latitude and longitude must be numbers.');
-        return;
-      }
-      const result = EclipseCalculator.forLocation(location, {
-        refDate: new Date(`${form.refDate}T00:00:00Z`),
-      });
-      setView(result);
-    } catch (err) {
-      setView(undefined);
-      setError(err instanceof Error ? err.message : String(err));
+  useEffect(() => {
+    if (phase.kind === 'results') {
+      window.history.replaceState(null, '', shareUrlFor(phase.view));
     }
+  }, [phase]);
+
+  const locate = async () => {
+    setPhase({ kind: 'locating' });
+    const outcome = await geolocation.request();
+    if (outcome.state === 'denied') {
+      setPhase({ kind: 'manual', notice: DENIAL_NOTICE[outcome.reason] });
+      return;
+    }
+    setPhase(resultFromLocation(toLocation(outcome.data), outcome.data.accuracyMeters));
+  };
+
+  const submitManual = (location: ObserverLocation) => {
+    setPhase(resultFromLocation(location, null));
+  };
+
+  // Request the iOS deviceorientation permission inside the click gesture so the
+  // compass can align as soon as AR starts, instead of waiting for a manual
+  // "recalibrate" tap.
+  const viewAr = async (view: EclipseView) => {
+    const headingAuthorized = await requestDeviceOrientationPermission(window);
+    setPhase({ kind: 'ar', view, headingAuthorized });
   };
 
   return (
     <main className="app">
       <h1>Eclipse Checker</h1>
-      <p className="subtitle">
-        Find the next solar eclipse visible from a location. Phase 0 scaffold — astronomy core only.
-      </p>
+      <p className="subtitle">Find the next solar eclipse visible from where you stand.</p>
 
-      <form
-        className="form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          compute();
-        }}
-      >
-        <label>
-          Latitude
-          <input value={form.lat} onChange={update('lat')} inputMode="decimal" />
-        </label>
-        <label>
-          Longitude
-          <input value={form.lon} onChange={update('lon')} inputMode="decimal" />
-        </label>
-        <label>
-          Height (m)
-          <input value={form.height} onChange={update('height')} inputMode="decimal" />
-        </label>
-        <label>
-          Search from date
-          <input type="date" value={form.refDate} onChange={update('refDate')} />
-        </label>
-        <button type="submit">Compute</button>
-      </form>
+      {phase.kind === 'landing' && (
+        <Landing
+          locating={geolocation.pending}
+          onLocate={() => void locate()}
+          onManual={() => setPhase({ kind: 'manual' })}
+        />
+      )}
 
-      {error !== null && <p className="message error">{error}</p>}
-      {view === undefined && error === null && (
-        <p className="message">Enter coordinates and press Compute.</p>
+      {phase.kind === 'locating' && <Status message="Requesting your location…" />}
+
+      {phase.kind === 'manual' && (
+        <ManualForm notice={phase.notice} onSubmit={submitManual} busy={false} />
       )}
-      {view === null && (
-        <p className="message">
-          No solar eclipse visible from this location within the 10-year search window.
-        </p>
+
+      {phase.kind === 'error' && (
+        <>
+          <Status message={phase.message} tone="error" />
+          <ManualForm onSubmit={submitManual} busy={false} />
+        </>
       )}
-      {view !== null && view !== undefined && <ResultView view={view} />}
+
+      {phase.kind === 'results' && (
+        <div className="results-wrap">
+          <Results
+            view={phase.view}
+            shareUrl={shareUrlFor(phase.view)}
+            locationAccuracyMeters={phase.accuracyMeters}
+            onRestart={() => {
+              window.history.replaceState(null, '', window.location.pathname);
+              setPhase({ kind: 'landing' });
+            }}
+            onViewAr={() => void viewAr(phase.view)}
+          />
+          <SkyMap view={phase.view} headingDeg={heading.headingDeg} />
+        </div>
+      )}
+
+      {phase.kind === 'ar' && (
+        <ARView
+          view={phase.view}
+          headingAuthorized={phase.headingAuthorized}
+          onExit={() => {
+            setPhase({ kind: 'results', view: phase.view, accuracyMeters: null });
+          }}
+        />
+      )}
     </main>
   );
 }
 
-function ResultView({ view }: { view: EclipseView }) {
-  return (
-    <section className="results">
-      <h2>
-        {view.kind} eclipse — {view.eclipseDateIso} ({view.timezone})
-      </h2>
-      <dl>
-        <dt>Peak</dt>
-        <dd>
-          {view.times.peak.localTime} local ({view.daysUntil} day(s) after search start)
-        </dd>
-        <dt>Begin / End</dt>
-        <dd>
-          {view.times.begin.localTime} – {view.times.end.localTime}
-        </dd>
-        <dt>Magnitude</dt>
-        <dd>{view.magnitude.toFixed(4)} of solar diameter</dd>
-        <dt>Obscuration</dt>
-        <dd>{Math.round(view.obscuration * 1000) / 10}% of solar area</dd>
-        {view.totalitySeconds !== null && (
-          <>
-            <dt>Totality</dt>
-            <dd>{Math.round(view.totalitySeconds)} s</dd>
-          </>
-        )}
-        <dt>Sun at peak</dt>
-        <dd>
-          altitude {view.sunAltitudePeakDeg.toFixed(1)}°, azimuth{' '}
-          {view.sunAzimuthPeakDeg.toFixed(1)}°
-        </dd>
-        <dt>Moon position angle</dt>
-        <dd>{view.moonPositionAngleDeg.toFixed(1)}°</dd>
-      </dl>
-    </section>
-  );
+function toLocation(data: GeolocationData): ObserverLocation {
+  return {
+    lat: data.lat,
+    lon: data.lon,
+    heightMeters: data.altitudeMeters ?? 0,
+  };
 }

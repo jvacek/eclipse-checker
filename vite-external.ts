@@ -45,7 +45,14 @@ function tryServeFile(reqUrl: string | undefined): {
   filePath: string;
   mimeType: string;
 } | null {
-  const urlPath = decodeURIComponent((reqUrl ?? '').split('?')[0]);
+  let urlPath: string;
+  try {
+    urlPath = decodeURIComponent((reqUrl ?? '').split('?')[0]);
+  } catch {
+    // Malformed percent-encoding (e.g. a stray % in the path) would throw and
+    // 500 the request; treat it as not-served so the app falls back gracefully.
+    return null;
+  }
   for (const source of sources) {
     if (!urlPath.startsWith(source.urlPrefix)) continue;
     const subPath = normalize('.' + urlPath.slice(source.urlPrefix.length));

@@ -104,6 +104,12 @@ export function placeSkySun(overlay: SkyOverlay, params: SunSceneParams): void {
   const direction = sunDirectionVector(placedAzimuth, params.altitudeDeg);
   overlay.sun.position.set(direction.x, direction.y, direction.z).multiplyScalar(SUN_DISTANCE);
 
+  // The bearing ring is built in the engine world frame (N at world azimuth 0),
+  // but the sun is placed at compass azimuth − yawOffset. Rotate the ring by
+  // +yawOffset about Y so N/E/S/W line up with the compass directions the sun
+  // is now placed against (N → world azimuth −yawOffset).
+  overlay.bearings.rotation.y = params.yawOffsetDeg * DEG_TO_RAD;
+
   // World-anchor the disc (celestial north up) so the crescent rotates with the
   // sky, not with the phone. +Z faces the observer because the plane sits on
   // the camera→sun ray.

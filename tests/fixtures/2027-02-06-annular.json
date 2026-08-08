@@ -1,0 +1,33 @@
+{
+  "eclipseDate": "2027-02-06",
+  "source": [
+    "Computed via astronomy-engine; cross-checked against NASA Besselian elements for 2027-02-06",
+    "Besselian elements: https://eclipse.gsfc.nasa.gov/SEsearch/SEdata.php?Ecl=20270206"
+  ],
+  "attribution": "Path-center location (not a NASA-published city); values computed locally.",
+  "tolerances": {
+    "peakTimeMin": 2,
+    "sunAltitudeDeg": 1.5,
+    "magnitude": 0.02,
+    "obscuration": 0.02
+  },
+  "notes": [
+    "Annular eclipse; the moon (smaller) sits fully inside the sun's disc at peak, so obscuration must be ~(rMoon/rSun)^2 ~0.86, NOT 1.0.",
+    "Guards the circleOverlapFraction containment branch: when the moon is the smaller disc, obscuration is the area ratio."
+  ],
+  "locations": [
+    {
+      "name": "Chile (annular path center)",
+      "lat": -45,
+      "lon": -75,
+      "height": 0,
+      "timezone": "America/Santiago",
+      "expected": {
+        "kind": "Annular",
+        "peakUtcIso": "2027-02-06T14:49:30Z",
+        "magnitude": 0.93,
+        "obscuration": 0.857
+      }
+    }
+  ]
+}

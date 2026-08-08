@@ -146,6 +146,7 @@ export function ARView({
   const onExitRef = useRef(onExit);
   const headingDegRef = useRef<number | null>(null);
   const sessionRef = useRef<EngineSessionApi | null>(null);
+  const exitingRef = useRef(false);
 
   const [status, setStatus] = useState<'starting' | 'active' | 'error' | 'exiting'>('starting');
   const [error, setError] = useState<string | null>(null);
@@ -329,7 +330,14 @@ export function ARView({
         raf = requestAnimationFrame(tick);
         setStatus('active');
       } catch (err) {
-        if (!disposed) {
+        if (!disposed && !exitingRef.current) {
+          // Tear the camera/session down so the error screen doesn't sit on top
+          // of a still-running camera stream (battery + privacy). Idempotent.
+          try {
+            session?.stop();
+          } catch {
+            // Teardown is best-effort; never mask the user-facing error.
+          }
           Sentry.captureException(err, {
             tags: { ar: 'start' },
           });
@@ -385,7 +393,10 @@ export function ARView({
 
   const exitAR = () => {
     // Stop the engine and paint a black cover, then leave on the next frame so
-    // the last rendered AR frame never flashes over the results view.
+    // the last rendered AR frame never flashes over the results view. Mark the
+    // exit so a pending start() rejection (from the stop below) can't surface
+    // an error screen after 'exiting'.
+    exitingRef.current = true;
     setStatus('exiting');
     sessionRef.current?.stop();
     restoreCanvas();

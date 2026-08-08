@@ -14,6 +14,7 @@ interface FakeEngine {
     name?: string;
     onStart?: () => void;
     onException?: (error: unknown) => void;
+    onDetach?: () => void;
   }>;
   sky: EngineSceneLike;
   run: ReturnType<typeof vi.fn>;
@@ -103,5 +104,55 @@ describe('createEngineSession', () => {
     session.stop();
     expect(engine.stop).toHaveBeenCalledTimes(1);
     expect(engine.clearCameraPipelineModules).toHaveBeenCalledTimes(1);
+  });
+
+  it('stop() is idempotent: a second stop does not tear the engine down again', async () => {
+    const { engine } = makeEngine();
+    const session = createEngineSession({ engine, canvas: {} });
+    const ready = session.start();
+    session.stop();
+    await expect(ready).rejects.toThrow(/stopped before it started/);
+    session.stop();
+    expect(engine.stop).toHaveBeenCalledTimes(1);
+    expect(engine.clearCameraPipelineModules).toHaveBeenCalledTimes(1);
+  });
+
+  it('start() after stop() rejects instead of running the engine twice', async () => {
+    const { engine } = makeEngine();
+    const session = createEngineSession({ engine, canvas: {} });
+    session.stop();
+    await expect(session.start()).rejects.toThrow(/stopped/);
+    expect(engine.run).not.toHaveBeenCalled();
+  });
+
+  it('stop() while the session is still starting rejects the pending start()', async () => {
+    const { engine, modules } = makeEngine();
+    const session = createEngineSession({ engine, canvas: {} });
+    const ready = session.start();
+    expect(findSceneModule(modules)).toBeDefined();
+    session.stop();
+    await expect(ready).rejects.toThrow(/stopped before it started/);
+    expect(engine.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a pending start() if the engine detaches the module without starting', async () => {
+    const { engine, modules } = makeEngine();
+    const session = createEngineSession({ engine, canvas: {} });
+    const ready = session.start();
+    const sceneModule = findSceneModule(modules)!;
+    expect(sceneModule.onDetach).toBeDefined();
+    sceneModule.onDetach!();
+    await expect(ready).rejects.toThrow(/ended before it started/);
+  });
+
+  it('settles the start() promise only once across onStart/onException/onDetach', async () => {
+    const { engine, modules, sky } = makeEngine();
+    const session = createEngineSession({ engine, canvas: {} });
+    const ready = session.start();
+    const sceneModule = findSceneModule(modules)!;
+    sceneModule.onStart!();
+    sceneModule.onException!(new Error('late failure'));
+    sceneModule.onDetach!();
+    await expect(ready).resolves.toBe(sky);
   });
 });

@@ -563,6 +563,24 @@ describe('ARView (8th Wall engine)', () => {
     expect(alert).not.toHaveTextContent(/No valid session manager/);
   });
 
+  it('stops the session when starting fails, so the camera stream is not left running', async () => {
+    const { engine } = makeFakeEngine();
+    const stop = vi.fn();
+    render(
+      <ARView
+        view={makeView()}
+        onExit={() => undefined}
+        loadEngine={() => Promise.resolve(engine)}
+        createSession={() => ({
+          start: () => Promise.reject(new Error('engine exploded')),
+          stop,
+        })}
+      />,
+    );
+    await screen.findByRole('alert');
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
   it('fails fast with a friendly message when no camera is available', async () => {
     Object.defineProperty(window.navigator, 'mediaDevices', {
       value: {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import * as Sentry from '@sentry/react';
 import * as THREE from 'three';
 
 import type { EclipseView } from '../astro';
@@ -259,6 +260,9 @@ export function ARView({
         setStatus('active');
       } catch (err) {
         if (!disposed) {
+          Sentry.captureException(err, {
+            tags: { ar: 'start' },
+          });
           setStatus('error');
           setError(friendlyError(err instanceof Error ? err.message : String(err)));
         }

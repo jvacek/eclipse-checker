@@ -77,3 +77,62 @@ export function northAlignYawOffsetDeg(
 ): number {
   return normalizeDeg(compassHeadingDeg - cameraForwardAzimuthDeg(cameraQuaternion));
 }
+
+export interface OffscreenIndicator {
+  /** CSS rotation for an up-pointing arrow glyph; 0 = up, clockwise positive. */
+  angleDeg: number;
+  /** Fraction of viewport width, clamped to [margin, 1-margin]. */
+  x: number;
+  /** Fraction of viewport height measured from the top. */
+  y: number;
+}
+
+export function offscreenSunIndicator(
+  cameraQuaternion: QuaternionTuple,
+  sunDirection: Direction3, // may be un-normalized (e.g. overlay.sun.position)
+  fovDeg: number, // camera vertical FOV
+  aspect: number, // viewport width / height
+  margin = 0.12,
+): OffscreenIndicator | null {
+  // camera space: rotate by the conjugate (unit quaternion) — camera looks down -z
+  const [qx, qy, qz, qw] = cameraQuaternion;
+  const [vx, vy, vz] = rotateQuaternion(
+    [-qx, -qy, -qz, qw],
+    sunDirection.x,
+    sunDirection.y,
+    sunDirection.z,
+  );
+
+  const tanV = Math.tan((fovDeg * DEG_TO_RAD) / 2);
+  const tanH = tanV * aspect;
+
+  let ndcX: number;
+  let ndcY: number;
+  if (vz < -1e-6) {
+    ndcX = vx / -vz / tanH;
+    ndcY = vy / -vz / tanV;
+    if (Math.abs(ndcX) <= 1 && Math.abs(ndcY) <= 1) {
+      return null; // on screen
+    }
+  } else {
+    // Behind the camera: point toward (vx, vy) as-is — NOT negated.
+    ndcX = vx;
+    ndcY = vy;
+    if (Math.hypot(ndcX, ndcY) < 1e-6) {
+      ndcX = 0;
+      ndcY = -1; // straight behind: point down
+    }
+  }
+
+  const len = Math.hypot(ndcX, ndcY);
+  const dx = ndcX / len;
+  const dy = ndcY / len;
+  const halfX = 0.5 - margin;
+  const halfY = 0.5 - margin;
+  const t = Math.min(halfX / Math.abs(dx), halfY / Math.abs(dy));
+  return {
+    angleDeg: Math.atan2(dx, dy) * RAD_TO_DEG, // 0 = up, clockwise (CSS rotate)
+    x: 0.5 + dx * t,
+    y: 0.5 - dy * t, // NDC y-up -> screen y-down
+  };
+}

@@ -5,6 +5,7 @@ import {
   northAlignedAzimuth,
   northAlignYawOffsetDeg,
   normalizeDeg,
+  offscreenSunIndicator,
   sunDirectionVector,
 } from '../../src/ar/math';
 
@@ -81,5 +82,86 @@ describe('eclipseDiscGeometry', () => {
       moonOffsetY: 0,
       moonRadius: 0,
     });
+  });
+});
+
+describe('offscreenSunIndicator', () => {
+  const IDENTITY: [number, number, number, number] = [0, 0, 0, 1];
+  const FOV = 60;
+  const ASPECT = 1;
+  const MARGIN = 0.12;
+
+  it('returns null when the sun is within the viewport', () => {
+    const result = offscreenSunIndicator(IDENTITY, sunDirectionVector(10, 5), FOV, ASPECT, MARGIN);
+    expect(result).toBeNull();
+  });
+
+  it('points right at the right margin for a sun to the east', () => {
+    const result = offscreenSunIndicator(
+      IDENTITY,
+      sunDirectionVector(90, 0),
+      FOV,
+      ASPECT,
+      MARGIN,
+    )!;
+    expect(result.x).toBeCloseTo(1 - MARGIN, 4);
+    expect(result.angleDeg).toBeCloseTo(90, 4);
+  });
+
+  it('points up at the top margin for a sun overhead', () => {
+    const result = offscreenSunIndicator(
+      IDENTITY,
+      sunDirectionVector(0, 60),
+      FOV,
+      ASPECT,
+      MARGIN,
+    )!;
+    expect(result.y).toBeCloseTo(MARGIN, 4);
+    expect(result.angleDeg).toBeCloseTo(0, 4);
+  });
+
+  it('points down-left for a sun behind and to the left', () => {
+    const result = offscreenSunIndicator(
+      IDENTITY,
+      sunDirectionVector(225, 0),
+      FOV,
+      ASPECT,
+      MARGIN,
+    )!;
+    expect(result.x).toBeLessThan(0.5);
+    expect(result.angleDeg).toBeCloseTo(-90, 4);
+  });
+
+  it('points straight down for a sun directly behind', () => {
+    const result = offscreenSunIndicator(
+      IDENTITY,
+      sunDirectionVector(180, 0),
+      FOV,
+      ASPECT,
+      MARGIN,
+    )!;
+    expect(result.y).toBeCloseTo(1 - MARGIN, 4);
+    expect(result.angleDeg).toBeCloseTo(180, 4);
+  });
+
+  it('clamps every result inside [margin, 1-margin] on both axes', () => {
+    for (const az of [0, 45, 90, 135, 180, 225, 270, 315]) {
+      for (const alt of [0, 30, 60]) {
+        const result = offscreenSunIndicator(
+          IDENTITY,
+          sunDirectionVector(az, alt),
+          FOV,
+          ASPECT,
+          MARGIN,
+        );
+        if (result === null) {
+          continue;
+        }
+        expect(result.x).toBeGreaterThanOrEqual(MARGIN - 1e-6);
+        expect(result.x).toBeLessThanOrEqual(1 - MARGIN + 1e-6);
+        expect(result.y).toBeGreaterThanOrEqual(MARGIN - 1e-6);
+        expect(result.y).toBeLessThanOrEqual(1 - MARGIN + 1e-6);
+      }
+    }
   });
 });

@@ -8,7 +8,7 @@ import {
   type EngineSessionApi,
 } from '../ar/engineSession';
 import { createBrowserEngineLoader, type EngineWindowLike } from '../ar/engineLoader';
-import { northAlignYawOffsetDeg } from '../ar/math';
+import { northAlignYawOffsetDeg, offscreenSunIndicator } from '../ar/math';
 import { createSkyOverlay, placeSkySun, type SkyOverlay } from '../ar/scene';
 import {
   HeadingTracker,
@@ -115,6 +115,8 @@ export function ARView({
   headingSource,
 }: ARViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const arrowRef = useRef<HTMLDivElement>(null);
+  const glyphRef = useRef<SVGSVGElement>(null);
   const onExitRef = useRef(onExit);
   const headingDegRef = useRef<number | null>(null);
 
@@ -223,6 +225,33 @@ export function ARView({
               sceneCamera.quaternion.z,
               sceneCamera.quaternion.w,
             );
+
+            const arrow = arrowRef.current;
+            const glyph = glyphRef.current;
+            const cam = sceneCamera as Partial<THREE.PerspectiveCamera>;
+            const fov = typeof cam.fov === 'number' && cam.fov > 0 ? cam.fov : 60;
+            const aspect = typeof cam.aspect === 'number' && cam.aspect > 0 ? cam.aspect : 1;
+            if (arrow !== null && glyph !== null) {
+              const indicator = offscreenSunIndicator(
+                [
+                  sceneCamera.quaternion.x,
+                  sceneCamera.quaternion.y,
+                  sceneCamera.quaternion.z,
+                  sceneCamera.quaternion.w,
+                ],
+                overlay.sun.position,
+                fov,
+                aspect,
+              );
+              if (indicator === null) {
+                arrow.hidden = true;
+              } else {
+                arrow.hidden = false;
+                arrow.style.left = `${(indicator.x * 100).toFixed(2)}%`;
+                arrow.style.top = `${(indicator.y * 100).toFixed(2)}%`;
+                glyph.style.transform = `rotate(${indicator.angleDeg.toFixed(1)}deg)`;
+              }
+            }
           }
           raf = requestAnimationFrame(tick);
         };
@@ -264,6 +293,13 @@ export function ARView({
   return (
     <section className="ar-view" data-status={status}>
       <canvas ref={canvasRef} className="ar-canvas" />
+
+      <div ref={arrowRef} className="ar-sun-arrow" hidden aria-hidden="true">
+        <svg ref={glyphRef} viewBox="0 0 24 24">
+          <path d="M12 2 L20 16 L12 12 L4 16 Z" fill="currentColor" />
+        </svg>
+        <span>Sun</span>
+      </div>
 
       {status === 'starting' && <p className="ar-status">Starting AR…</p>}
 

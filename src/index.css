@@ -293,6 +293,34 @@ button.link {
   }
 }
 
+.ar-sun-arrow {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transform: translate(-50%, -50%);
+  color: #ffd9a0;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(255, 180, 80, 0.45));
+}
+
+.ar-sun-arrow[hidden] {
+  display: none; /* [hidden] loses to display:flex without this */
+}
+
+.ar-sun-arrow svg {
+  width: 2rem;
+  height: 2rem;
+}
+
+.ar-sun-arrow span {
+  font-size: 0.7rem;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
 .ar-safety {
   position: absolute;
   left: 1rem;

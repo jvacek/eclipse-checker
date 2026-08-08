@@ -17,22 +17,38 @@ uniform float uMoonRadius;
 uniform float uObscuration;
 varying vec2 vUv;
 
+const float GLOW_EXTENT = 2.0;
+
 void main() {
-  vec2 p = vUv * 2.0 - 1.0;
+  vec2 p = (vUv * 2.0 - 1.0) * GLOW_EXTENT;
   float dSun = length(p);
-  if (dSun > 1.0) discard;
+  float aa = fwidth(dSun) * 1.5;   // screen-space AA: crisp at any size
+
+  // halo: wide soft glow + a corona ring hugging the limb
+  float glow = exp(-max(dSun - 1.0, 0.0) * 6.0) * 0.5;
+  float corona = exp(-abs(dSun - 1.0) * 9.0) * 0.45 * (0.5 + 0.5 * uObscuration);
 
   float dMoon = length(p - uMoonOffset);
-  float eclipsed = 1.0 - smoothstep(uMoonRadius - 0.015, uMoonRadius + 0.015, dMoon);
+  float eclipsed = 1.0 - smoothstep(uMoonRadius - aa, uMoonRadius + aa, dMoon);
 
-  float rim = smoothstep(0.985, 1.0, dSun);
-  vec3 sunColor = mix(vec3(1.0, 0.84, 0.5), vec3(1.0, 0.98, 0.85), rim);
-  vec3 eclipsedColor = vec3(0.02, 0.02, 0.05);
+  // limb-darkened photosphere: warm orange limb -> near-white core
+  float limb = smoothstep(1.0, 0.55, dSun);
+  vec3 sunColor = mix(vec3(1.0, 0.62, 0.25), vec3(1.0, 0.97, 0.86), limb);
+  vec3 moonColor = vec3(0.03, 0.03, 0.08);
+  vec3 disc = mix(sunColor, moonColor, eclipsed);
 
-  vec3 color = mix(sunColor, eclipsedColor, eclipsed);
-  gl_FragColor = vec4(color, 1.0 - rim);
+  float discAlpha = 1.0 - smoothstep(1.0 - aa, 1.0 + aa, dSun);
+  float glowAmt = glow + corona;
+  vec3 glowColor = vec3(1.0, 0.75, 0.45);
+  // straight-alpha composite of disc over glow
+  vec3 color = (disc * discAlpha + glowColor * glowAmt) / max(discAlpha + glowAmt, 1e-4);
+  float alpha = clamp(discAlpha + glowAmt, 0.0, 1.0);
+  gl_FragColor = vec4(color, alpha);
 }
 `;
+
+/** The quad spans [-GLOW_EXTENT, GLOW_EXTENT] so the disc (radius 1) has a glow halo. */
+export const GLOW_EXTENT = 2.0;
 
 export interface CrescentUniforms {
   uMoonOffset: { value: [number, number] };

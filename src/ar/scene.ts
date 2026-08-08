@@ -1,22 +1,24 @@
 import {
   BufferGeometry,
-  ConeGeometry,
   Float32BufferAttribute,
   Group,
   LineLoop,
   LineBasicMaterial,
+  LineSegments,
   Mesh,
-  MeshBasicMaterial,
   PlaneGeometry,
   Scene,
   ShaderMaterial,
 } from 'three';
 
 import { DEG_TO_RAD } from '../astro/constants';
-import { applyEclipseDiscGeometry, createCrescentMaterial } from './crescentShader';
+import { applyEclipseDiscGeometry, createCrescentMaterial, GLOW_EXTENT } from './crescentShader';
 import { eclipseDiscGeometry, northAlignedAzimuth, sunDirectionVector } from './math';
 
 export const SUN_DISTANCE = 30;
+
+/** The true sun (~0.26° radius) is ~10px on a phone screen; exaggerate for visibility. */
+export const MIN_SUN_DISPLAY_DEG = 3;
 
 export interface SunSceneParams {
   azimuthDeg: number;
@@ -39,6 +41,14 @@ export interface SkyOverlay {
 }
 
 const CARDINALS = [0, 90, 180, 270];
+const LETTER_SIZE = 1.6;
+
+const LETTER_STROKES: Record<string, number[]> = {
+  N: [0, 0, 0, 1, 0, 1, 0.6, 0, 0.6, 0, 0.6, 1],
+  E: [0.6, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0.6, 1, 0, 0.5, 0.42, 0.5],
+  S: [0.6, 1, 0, 1, 0, 1, 0, 0.5, 0, 0.5, 0.6, 0.5, 0.6, 0.5, 0.6, 0, 0.6, 0, 0, 0],
+  W: [0, 1, 0.15, 0, 0.15, 0, 0.3, 0.55, 0.3, 0.55, 0.45, 0, 0.45, 0, 0.6, 1],
+};
 
 /**
  * Builds the eclipse overlay (sun disc + crescent, horizon ring, altitude grid,
@@ -73,9 +83,9 @@ export function createSkyOverlay(scene: Scene): SkyOverlay {
       disposeGeometry(crescent.geometry);
       disposeGeometry(horizon.geometry);
       grid.forEach((ring) => disposeGeometry(ring.geometry));
-      bearings.children.forEach((child) => {
-        if (child instanceof Mesh) {
-          disposeGeometry(child.geometry);
+      bearings.traverse((obj) => {
+        if (obj instanceof LineSegments) {
+          disposeGeometry(obj.geometry);
         }
       });
       crescent.material.dispose();
@@ -90,8 +100,9 @@ export function placeSkySun(overlay: SkyOverlay, params: SunSceneParams): void {
   );
   overlay.sun.position.set(direction.x, direction.y, direction.z).multiplyScalar(SUN_DISTANCE);
 
-  const worldRadius = SUN_DISTANCE * Math.tan(params.rSunDeg * DEG_TO_RAD);
-  overlay.crescent.scale.setScalar(Math.max(worldRadius, 1e-6));
+  const displayDeg = Math.max(params.rSunDeg, MIN_SUN_DISPLAY_DEG);
+  const worldRadius = SUN_DISTANCE * Math.tan(displayDeg * DEG_TO_RAD);
+  overlay.crescent.scale.setScalar(Math.max(worldRadius, 1e-6) * GLOW_EXTENT);
 
   applyEclipseDiscGeometry(
     overlay.crescent.material,
@@ -143,17 +154,61 @@ function buildAltitudeGrid(): LineLoop[] {
 
 function buildBearings(): Group {
   const group = new Group();
+
+  const tickPositions: number[] = [];
+  for (let azimuth = 0; azimuth < 360; azimuth += 15) {
+    const direction = sunDirectionVector(azimuth, 0);
+    const len = azimuth % 45 === 0 ? 0.8 : 0.45;
+    const x = direction.x * SUN_DISTANCE;
+    const z = direction.z * SUN_DISTANCE;
+    tickPositions.push(x, -len / 2, z, x, len / 2, z);
+  }
+  const tickGeometry = new BufferGeometry();
+  tickGeometry.setAttribute('position', new Float32BufferAttribute(tickPositions, 3));
+  const ticks = new LineSegments(
+    tickGeometry,
+    new LineBasicMaterial({ color: 0x3a4a6a, transparent: true, opacity: 0.8 }),
+  );
+  ticks.name = 'bearing-ticks';
+  group.add(ticks);
+
   for (const azimuth of CARDINALS) {
     const isNorth = azimuth === 0;
     const direction = sunDirectionVector(azimuth, 0);
-    const cone = new Mesh(
-      new ConeGeometry(0.12, 0.45, 12),
-      new MeshBasicMaterial({ color: isNorth ? 0xff6b6b : 0x4a6bd0 }),
-    );
-    cone.position.set(direction.x, direction.y, direction.z).multiplyScalar(SUN_DISTANCE);
-    cone.lookAt(cone.position.x * 2, 0, cone.position.z * 2);
-    group.add(cone);
+    const name = azimuth === 0 ? 'N' : azimuth === 90 ? 'E' : azimuth === 180 ? 'S' : 'W';
+    const letter = buildLetter(name, { color: isNorth ? 0xff6b6b : 0x8fa3c8 });
+    letter.position.set(direction.x, 0, direction.z).multiplyScalar(SUN_DISTANCE);
+    letter.position.y = 1.1;
+    letter.lookAt(0, 1.1, 0);
+    group.add(letter);
   }
+
+  return group;
+}
+
+function buildLetter(letter: string, options: { color: number }): Group {
+  const group = new Group();
+  group.name = `bearing-${letter}`;
+  const strokes = LETTER_STROKES[letter];
+  const positions: number[] = [];
+  for (let i = 0; i < strokes.length; i += 4) {
+    const [x0, y0, x1, y1] = strokes.slice(i, i + 4);
+    positions.push(
+      (x0 - 0.3) * LETTER_SIZE,
+      (y0 - 0.5) * LETTER_SIZE,
+      0,
+      (x1 - 0.3) * LETTER_SIZE,
+      (y1 - 0.5) * LETTER_SIZE,
+      0,
+    );
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  const segments = new LineSegments(
+    geometry,
+    new LineBasicMaterial({ color: options.color, transparent: true, opacity: 0.9 }),
+  );
+  group.add(segments);
   return group;
 }
 

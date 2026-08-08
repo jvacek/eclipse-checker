@@ -1,7 +1,14 @@
-import { Scene } from 'three';
+import { LineSegments, Scene } from 'three';
 import { describe, expect, it } from 'vitest';
 
-import { createSkyOverlay, placeSkySun, SUN_DISTANCE, type SkyOverlay } from '../../src/ar/scene';
+import {
+  createSkyOverlay,
+  placeSkySun,
+  SUN_DISTANCE,
+  MIN_SUN_DISPLAY_DEG,
+  type SkyOverlay,
+} from '../../src/ar/scene';
+import { GLOW_EXTENT } from '../../src/ar/crescentShader';
 
 function makeParams(overrides: Partial<Parameters<typeof placeSkySun>[1]> = {}) {
   return {
@@ -24,7 +31,18 @@ describe('createSkyOverlay', () => {
     expect(scene.children).toContain(overlay.sun);
     expect(scene.children).toContain(overlay.horizon);
     expect(overlay.grid).toHaveLength(5);
-    expect(overlay.bearings.children).toHaveLength(4);
+    expect(overlay.bearings.children).toHaveLength(5);
+    overlay.dispose();
+  });
+
+  it('builds a compass ring of 15°-tick line segments plus four cardinal letter groups', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    const ticks = overlay.bearings.getObjectByName('bearing-ticks');
+    expect(ticks).toBeInstanceOf(LineSegments);
+    for (const name of ['bearing-N', 'bearing-E', 'bearing-S', 'bearing-W']) {
+      expect(overlay.bearings.getObjectByName(name)).toBeTruthy();
+    }
     overlay.dispose();
   });
 });
@@ -61,6 +79,28 @@ describe('placeSkySun', () => {
     expect(uniforms.uMoonOffset.value[0]).toBeCloseTo(0.5, 4);
     expect(uniforms.uMoonRadius.value).toBeCloseTo(0.27 / 0.26, 4);
     expect(uniforms.uObscuration.value).toBe(0.6);
+    overlay.dispose();
+  });
+
+  it('enforces a minimum display size so the true-scale sun stays visible', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    placeSkySun(overlay, makeParams({ rSunDeg: 0.26 }));
+    expect(overlay.crescent.scale.x).toBeCloseTo(
+      SUN_DISTANCE * Math.tan(MIN_SUN_DISPLAY_DEG * (Math.PI / 180)) * GLOW_EXTENT,
+      6,
+    );
+    overlay.dispose();
+  });
+
+  it('scales the crescent with the sun radius above the display floor', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    placeSkySun(overlay, makeParams({ rSunDeg: 6 }));
+    expect(overlay.crescent.scale.x).toBeCloseTo(
+      SUN_DISTANCE * Math.tan(6 * (Math.PI / 180)) * GLOW_EXTENT,
+      6,
+    );
     overlay.dispose();
   });
 });

@@ -115,6 +115,10 @@ export default function App() {
   // "recalibrate" tap.
   const viewAr = async (view: EclipseView) => {
     const headingAuthorized = await requestDeviceOrientationPermission(window);
+    console.debug(
+      '[eclipse-checker:ar] entry: orientation permission',
+      headingAuthorized ? 'granted' : 'denied',
+    );
     setPhase({ kind: 'ar', view, headingAuthorized });
   };
 

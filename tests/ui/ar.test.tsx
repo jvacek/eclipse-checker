@@ -162,8 +162,7 @@ describe('ARView (8th Wall engine)', () => {
     modules.find((m) => m.name === 'eclipse-checker-overlay')?.onStart?.();
   });
 
-  it('aligns the sun to the compass heading', async () => {
-    const { orientation, sky } = renderActive();
+  it('aligns the sun to the compass heading', async () => {    const { orientation, sky } = renderActive();
     const section = document.querySelector('.ar-view');
     await waitFor(() => expect(section).toHaveAttribute('data-status', 'active'));
 
@@ -357,5 +356,18 @@ describe('ARView (8th Wall engine)', () => {
     const alert = await screen.findByRole('alert');
     await waitFor(() => expect(alert).toHaveTextContent(/AR needs the camera/i));
     expect(loadEngine).not.toHaveBeenCalled();
+  });
+
+  it('starts the off-screen sun arrow hidden', async () => {
+    renderActive();
+    const arrow = document.querySelector('.ar-sun-arrow') as HTMLElement;
+    expect(arrow).toHaveAttribute('hidden');
+  });
+
+  it('shows the off-screen arrow once active when the sun is behind-right', async () => {
+    renderActive();
+    const arrow = document.querySelector('.ar-sun-arrow') as HTMLElement;
+    // Identity camera, default view: sun azimuth 280°, altitude 7° → behind-right.
+    await waitFor(() => expect(arrow).not.toHaveAttribute('hidden'));
   });
 });

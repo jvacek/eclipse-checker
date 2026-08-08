@@ -365,6 +365,10 @@ export function createARController(options: ARControllerOptions): ARController {
 
   const tick = () => {
     if (overlay !== null && sceneCamera !== null) {
+      // World tracking is disabled in the session, so the camera tracks rotation
+      // only and stays at the world origin — the overlay dome is already centered
+      // on the phone, and the sun stays at the correct bearing/altitude relative
+      // to it without any per-frame re-anchoring.
       params.yawOffsetDeg = yawOffsetDeg ?? 0;
       placeSkySun(overlay, params);
 

@@ -27,11 +27,12 @@ function makeParams(overrides: Partial<Parameters<typeof placeSkySun>[1]> = {}) 
 }
 
 describe('createSkyOverlay', () => {
-  it('adds the sun, horizon, grid and bearings to the given scene', () => {
+  it('adds the sun, horizon, grid and bearings to the given scene under a root group', () => {
     const scene = new Scene();
     const overlay: SkyOverlay = createSkyOverlay(scene);
-    expect(scene.children).toContain(overlay.sun);
-    expect(scene.children).toContain(overlay.horizon);
+    expect(scene.children).toContain(overlay.root);
+    expect(overlay.root.children).toContain(overlay.sun);
+    expect(overlay.root.children).toContain(overlay.horizon);
     expect(overlay.grid).toHaveLength(5);
     expect(overlay.bearings.children).toHaveLength(5);
     overlay.dispose();
@@ -100,6 +101,20 @@ describe('placeSkySun', () => {
     expect(overlay.sun.position.x).toBeCloseTo(0, 5);
     expect(overlay.sun.position.z).toBeCloseTo(SUN_DISTANCE * Math.cos((30 * Math.PI) / 180), 5);
     expect(overlay.sun.position.y).toBeCloseTo(SUN_DISTANCE * Math.sin((30 * Math.PI) / 180), 5);
+    overlay.dispose();
+  });
+
+  it('draws the sight-line beam from the floor edge up to the sun', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    const rise = overlay.beam.rise.geometry.getAttribute('position');
+    placeSkySun(overlay, makeParams({ altitudeDeg: 30 }));
+    // Rise line starts on the floor at the sun's azimuth and ends at the sun.
+    expect(rise.getX(0)).toBeCloseTo(0, 5);
+    expect(rise.getY(0)).toBeCloseTo(0, 5);
+    expect(rise.getX(1)).toBeCloseTo(overlay.sun.position.x, 5);
+    expect(rise.getY(1)).toBeCloseTo(overlay.sun.position.y, 5);
+    expect(rise.getZ(1)).toBeCloseTo(overlay.sun.position.z, 5);
     overlay.dispose();
   });
 

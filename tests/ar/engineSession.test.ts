@@ -31,7 +31,7 @@ function makeEngine(): FakeEngine {
       xrScene: () => sky,
     },
     GlTextureRenderer: { pipelineModule: () => ({ name: 'gl-texture' }) },
-    XrController: { pipelineModule: () => ({ name: 'xr-controller' }) },
+    XrController: { pipelineModule: () => ({ name: 'xr-controller' }), configure: vi.fn() },
     addCameraPipelineModules: (mods) => modules.push(...(mods as typeof modules)),
     clearCameraPipelineModules: vi.fn(),
     run: vi.fn(),
@@ -59,6 +59,18 @@ describe('createEngineSession', () => {
       SCENE_MODULE_NAME,
     ]);
     expect(engine.run).toHaveBeenCalledWith({ canvas });
+  });
+
+  it('disables world tracking (SLAM) so the camera is rotation-only before run', () => {
+    const { engine } = makeEngine();
+    const session = createEngineSession({ engine, canvas: {} });
+
+    void session.start();
+
+    const configure = engine.XrController.configure as ReturnType<typeof vi.fn>;
+    const run = engine.run as ReturnType<typeof vi.fn>;
+    expect(configure.mock.calls[0][0]).toEqual({ disableWorldTracking: true });
+    expect(configure.mock.invocationCallOrder[0]).toBeLessThan(run.mock.invocationCallOrder[0]);
   });
 
   it('resolves start() with the engine main scene', async () => {

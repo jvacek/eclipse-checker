@@ -14,6 +14,8 @@ export interface EngineGlTextureRendererApi {
 
 export interface EngineXrControllerApi {
   pipelineModule(): unknown;
+  /** Static config; `disableWorldTracking` must be called before `run()`. */
+  configure(config: { disableWorldTracking?: boolean }): unknown;
 }
 
 export interface EngineApiLike {
@@ -170,6 +172,11 @@ export function createEngineSession(options: EngineSessionOptions): EngineSessio
       ...(options.extraModules ?? []),
       sceneModule,
     ]);
+    // Disable SLAM so the camera tracks rotation only (via the IMU/compass) and
+    // stays at the world origin. The eclipse position is a direction from the
+    // phone — it must not be a room you can walk through, which fixed world
+    // anchoring would allow. Must be set before `run()`.
+    engine.XrController.configure({ disableWorldTracking: true });
     engine.run({ canvas });
     return sceneReady;
   }

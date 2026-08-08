@@ -370,13 +370,14 @@ describe('createARController', () => {
     expect(onCompass).toHaveBeenCalledWith('provisional');
     expect(onCompass).not.toHaveBeenCalledWith('aligned');
 
-    const sun = sky.children[0] as { position: { x: number; z: number } };
-    expect(sun).toBeDefined();
+    const sun = sky.getObjectByName('sun') as { position: { x: number; z: number } } | null;
+    expect(sun).not.toBeNull();
+    const sunPos = sun!.position;
     const az = (280 - 90) * (Math.PI / 180);
     const alt = 7 * (Math.PI / 180);
     await vi.waitFor(() => {
-      expect(sun.position.x).toBeCloseTo(Math.sin(az) * Math.cos(alt) * SUN_DISTANCE, 4);
-      expect(sun.position.z).toBeCloseTo(-Math.cos(az) * Math.cos(alt) * SUN_DISTANCE, 4);
+      expect(sunPos.x).toBeCloseTo(Math.sin(az) * Math.cos(alt) * SUN_DISTANCE, 4);
+      expect(sunPos.z).toBeCloseTo(-Math.cos(az) * Math.cos(alt) * SUN_DISTANCE, 4);
     });
 
     // A good reading upgrades the provisional fix and marks the compass aligned.
@@ -391,7 +392,7 @@ describe('createARController', () => {
     });
     expect(onCompass).toHaveBeenCalledWith('aligned');
     await vi.waitFor(() => {
-      expect(sun.position.x).toBeCloseTo(
+      expect(sunPos.x).toBeCloseTo(
         Math.sin((280 - 100) * (Math.PI / 180)) * Math.cos(alt) * SUN_DISTANCE,
         4,
       );

@@ -87,7 +87,7 @@ function makeFakeEngine(): {
       xrScene: () => ({ scene: {}, camera: {} }),
     },
     GlTextureRenderer: { pipelineModule: () => ({ name: 'gl-texture' }) },
-    XrController: { pipelineModule: () => ({ name: 'xr-controller' }) },
+    XrController: { pipelineModule: () => ({ name: 'xr-controller' }), configure: vi.fn() },
     addCameraPipelineModules: vi.fn(),
     clearCameraPipelineModules: vi.fn(),
     run,
@@ -183,7 +183,7 @@ describe('ARView (8th Wall engine)', () => {
 
     // Camera quaternion is identity → world azimuth 0. A compass heading of 90° means
     // the sun (real azimuth 280°) must be drawn at world azimuth 190°.
-    const sun = sky.scene.children[0];
+    const sun = sky.scene.getObjectByName('sun')!;
     const az = (280 - 90) * (Math.PI / 180);
     const alt = 7 * (Math.PI / 180);
     await waitFor(() => {
@@ -315,7 +315,7 @@ describe('ARView (8th Wall engine)', () => {
     });
     await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
 
-    const sun = sky.scene.children[0];
+    const sun = sky.scene.getObjectByName('sun')!;
     const xBefore = sun.position.x;
     const zBefore = sun.position.z;
 
@@ -362,7 +362,7 @@ describe('ARView (8th Wall engine)', () => {
       webkitCompassHeading: 100,
     });
 
-    const sun = sky.scene.children[0];
+    const sun = sky.scene.getObjectByName('sun')!;
     const az = (280 - 100) * (Math.PI / 180);
     const alt = 7 * (Math.PI / 180);
     await waitFor(() => {
@@ -387,7 +387,7 @@ describe('ARView (8th Wall engine)', () => {
     });
     await waitFor(() => expect(screen.getByText(/Compass aligned/i)).toBeInTheDocument());
 
-    const sun = sky.scene.children[0];
+    const sun = sky.scene.getObjectByName('sun')!;
     const az = (280 - 90) * (Math.PI / 180);
     const alt = 7 * (Math.PI / 180);
     await waitFor(() => {

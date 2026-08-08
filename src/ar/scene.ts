@@ -1,11 +1,15 @@
 import {
   BufferGeometry,
+  CircleGeometry,
+  Color,
+  DoubleSide,
   Float32BufferAttribute,
   Group,
   LineLoop,
   LineBasicMaterial,
   LineSegments,
   Mesh,
+  MeshBasicMaterial,
   PlaneGeometry,
   Scene,
   ShaderMaterial,
@@ -37,12 +41,24 @@ export interface SunSceneParams {
   obscuration: number;
 }
 
+export interface SunBeam {
+  group: Group;
+  /** Thick yellow band lying flat on the floor, pointing at the sun's azimuth. */
+  floor: Mesh<BufferGeometry, MeshBasicMaterial>;
+  /** Thin yellow line rising from the floor edge up to the sun disc. */
+  rise: LineSegments;
+}
+
 export interface SkyOverlay {
+  /** Root group holding all overlay content; re-centered on the camera each frame. */
+  root: Group;
   sun: Group;
   crescent: Mesh<PlaneGeometry, ShaderMaterial>;
   horizon: LineLoop;
   grid: LineLoop[];
   bearings: Group;
+  floor: Mesh<CircleGeometry, MeshBasicMaterial>;
+  beam: SunBeam;
   dispose: () => void;
 }
 
@@ -58,43 +74,70 @@ const LETTER_STROKES: Record<string, number[]> = {
 
 /**
  * Builds the eclipse overlay (sun disc + crescent, horizon ring, altitude grid,
- * cardinal bearings) into the engine's main three.js scene. The overlay renders
- * over the full camera feed, so real occluders (buildings, trees) visibly hide
- * the sun disc when they lie between the user and the eclipse position.
+ * cardinal bearings, floor guide) into the engine's main three.js scene. The
+ * overlay renders over the full camera feed, so real occluders (buildings,
+ * trees) visibly hide the sun disc when they lie between the user and the
+ * eclipse position.
+ *
+ * Everything hangs under a single `root` group so the controller can keep the
+ * whole overlay centered on the camera (phone) each frame: the eclipse position
+ * is a direction from the observer, not a fixed point in the room, so the dome
+ * must translate with the phone instead of staying anchored in world space.
  */
 export function createSkyOverlay(scene: Scene): SkyOverlay {
+  const root = new Group();
+  root.name = 'sky-overlay';
+  scene.add(root);
+
   const sun = new Group();
+  sun.name = 'sun';
   const crescent = new Mesh(new PlaneGeometry(2, 2), createCrescentMaterial());
   sun.add(crescent);
-  scene.add(sun);
+  root.add(sun);
 
   const horizon = buildHorizonRing();
-  scene.add(horizon);
+  root.add(horizon);
 
   const grid = buildAltitudeGrid();
   for (const ring of grid) {
-    scene.add(ring);
+    root.add(ring);
   }
 
   const bearings = buildBearings();
-  scene.add(bearings);
+  root.add(bearings);
+
+  const floor = buildFloor();
+  root.add(floor);
+
+  const beam = buildSunBeam();
+  root.add(beam.group);
 
   return {
+    root,
     sun,
     crescent,
     horizon,
     grid,
     bearings,
+    floor,
+    beam,
     dispose: () => {
       disposeGeometry(crescent.geometry);
       disposeGeometry(horizon.geometry);
       grid.forEach((ring) => disposeGeometry(ring.geometry));
       bearings.traverse((obj) => {
-        if (obj instanceof LineSegments) {
+        if (obj instanceof LineSegments || obj instanceof Mesh) {
           disposeGeometry(obj.geometry);
+          (obj.material as { dispose?: () => void } | undefined)?.dispose?.();
         }
       });
+      disposeGeometry(floor.geometry);
+      disposeGeometry(beam.floor.geometry);
+      disposeGeometry(beam.rise.geometry);
       crescent.material.dispose();
+      floor.material.dispose();
+      beam.floor.material.dispose();
+      (beam.rise.material as LineBasicMaterial).dispose();
     },
   };
 }
@@ -140,6 +183,8 @@ export function placeSkySun(overlay: SkyOverlay, params: SunSceneParams): void {
   // offset, so it stays in the per-frame pass.
   const orientation = sunDiscOrientation(placedAzimuth, params.altitudeDeg, params.latitudeDeg);
   overlay.sun.quaternion.set(orientation[0], orientation[1], orientation[2], orientation[3]);
+
+  placeSunBeam(overlay.beam, overlay.sun.position, placedAzimuth);
 }
 
 function buildHorizonRing(): LineLoop {
@@ -154,6 +199,108 @@ function buildHorizonRing(): LineLoop {
     geometry,
     new LineBasicMaterial({ color: 0x3a4a6a, transparent: true, opacity: 0.8 }),
   );
+}
+
+/**
+ * A large translucent disc lying flat on the ground, so the horizon ring and
+ * compass ticks have a visible "floor" to read against rather than floating
+ * over the camera feed. Flat shading, no occlusion, subtle enough not to hide
+ * real occluders (buildings, trees) that should mask the sun.
+ */
+function buildFloor(): Mesh<CircleGeometry, MeshBasicMaterial> {
+  const geometry = new CircleGeometry(SUN_DISTANCE, 64);
+  const material = new MeshBasicMaterial({
+    color: 0x1b2436,
+    transparent: true,
+    opacity: 0.15,
+    depthWrite: false,
+    side: DoubleSide,
+  });
+  const floor = new Mesh(geometry, material);
+  floor.name = 'floor';
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = GROUND_Y;
+  return floor;
+}
+
+const BEAM_COLOR = 0xffd400;
+/** World-space half-width of the thick floor band. */
+const BEAM_HALF_WIDTH = 0.3;
+/**
+ * The virtual ground sits below the camera's eye level (the camera starts at
+ * world y=0), so the floor disc and beam are visible as a floor guide when the
+ * user looks down — a flat line drawn at y=0 would be edge-on and invisible.
+ */
+const GROUND_Y = -2;
+
+/**
+ * The "sight line" that guides the eye from the user up to the eclipse: a
+ * thick yellow band lying flat on the floor pointing at the sun's azimuth, plus
+ * a thin yellow line rising from the ring edge up to the sun disc. Geometries
+ * are allocated once and their position attributes rewritten each frame.
+ */
+function buildSunBeam(): SunBeam {
+  const group = new Group();
+  group.name = 'sun-beam';
+
+  const floorGeometry = new BufferGeometry();
+  floorGeometry.setAttribute('position', new Float32BufferAttribute(new Array(18).fill(0), 3));
+  const floor = new Mesh(
+    floorGeometry,
+    new MeshBasicMaterial({
+      color: BEAM_COLOR,
+      transparent: true,
+      opacity: 0.9,
+      side: DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  floor.name = 'beam-floor';
+  group.add(floor);
+
+  const riseGeometry = new BufferGeometry();
+  riseGeometry.setAttribute('position', new Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
+  const rise = new LineSegments(
+    riseGeometry,
+    new LineBasicMaterial({ color: BEAM_COLOR, transparent: true, opacity: 0.85 }),
+  );
+  rise.name = 'beam-rise';
+  group.add(rise);
+
+  return { group, floor, rise };
+}
+
+function placeSunBeam(beam: SunBeam, sunPosition: { x: number; y: number; z: number }, placedAzimuth: number): void {
+  const dir = sunDirectionVector(placedAzimuth, 0);
+  // Ring-edge point at the sun's azimuth, on the floor.
+  const ex = dir.x * SUN_DISTANCE;
+  const ez = dir.z * SUN_DISTANCE;
+
+  // Thick floor band: a quad lying flat on the lowered ground, from the origin
+  // to the edge point, offset perpendicular (in the XZ plane) by BEAM_HALF_WIDTH
+  // on each side. It sits on GROUND_Y so it reads as a floor guide the user can
+  // look down to see, rather than an edge-on line at eye level.
+  const px = (-ez / SUN_DISTANCE) * BEAM_HALF_WIDTH;
+  const pz = (ex / SUN_DISTANCE) * BEAM_HALF_WIDTH;
+  const a = [px, GROUND_Y, pz];
+  const b = [-px, GROUND_Y, -pz];
+  const c = [ex + px, GROUND_Y, ez + pz];
+  const d = [ex - px, GROUND_Y, ez - pz];
+  const floorAttr = beam.floor.geometry.getAttribute('position') as Float32BufferAttribute;
+  floorAttr.setXYZ(0, a[0], a[1], a[2]);
+  floorAttr.setXYZ(1, b[0], b[1], b[2]);
+  floorAttr.setXYZ(2, c[0], c[1], c[2]);
+  floorAttr.setXYZ(3, a[0], a[1], a[2]);
+  floorAttr.setXYZ(4, c[0], c[1], c[2]);
+  floorAttr.setXYZ(5, d[0], d[1], d[2]);
+  floorAttr.needsUpdate = true;
+
+  // Thin rise line: from the compass ring edge (at the sun's azimuth, y=0) up
+  // to the sun disc — directly above the end of the floor band.
+  const riseAttr = beam.rise.geometry.getAttribute('position') as Float32BufferAttribute;
+  riseAttr.setXYZ(0, ex, 0, ez);
+  riseAttr.setXYZ(1, sunPosition.x, sunPosition.y, sunPosition.z);
+  riseAttr.needsUpdate = true;
 }
 
 function buildAltitudeGrid(): LineLoop[] {
@@ -182,18 +329,31 @@ function buildBearings(): Group {
   const group = new Group();
 
   const tickPositions: number[] = [];
+  const tickColors: number[] = [];
+  const cardinalColor = new Color(0x8fa3c8);
+  const regularColor = new Color(0x3a4a6a);
+  const northColor = new Color(0xff5252);
   for (let azimuth = 0; azimuth < 360; azimuth += 15) {
     const direction = sunDirectionVector(azimuth, 0);
-    const len = azimuth % 45 === 0 ? 0.8 : 0.45;
     const x = direction.x * SUN_DISTANCE;
     const z = direction.z * SUN_DISTANCE;
-    tickPositions.push(x, -len / 2, z, x, len / 2, z);
+    // The north tick is long and red so the user can quickly sight the N/E/S/W
+    // line-up; the other cardinals are moderately long, the rest short.
+    const isNorth = azimuth === 0;
+    const isCardinal = azimuth % 45 === 0;
+    const len = isNorth ? 2.4 : isCardinal ? 1.2 : 0.7;
+    const color = isNorth ? northColor : isCardinal ? cardinalColor : regularColor;
+    for (const end of [-len / 2, len / 2]) {
+      tickPositions.push(x, end, z);
+      tickColors.push(color.r, color.g, color.b);
+    }
   }
   const tickGeometry = new BufferGeometry();
   tickGeometry.setAttribute('position', new Float32BufferAttribute(tickPositions, 3));
+  tickGeometry.setAttribute('color', new Float32BufferAttribute(tickColors, 3));
   const ticks = new LineSegments(
     tickGeometry,
-    new LineBasicMaterial({ color: 0x3a4a6a, transparent: true, opacity: 0.8 }),
+    new LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }),
   );
   ticks.name = 'bearing-ticks';
   group.add(ticks);
@@ -216,26 +376,64 @@ function buildLetter(letter: string, options: { color: number }): Group {
   const group = new Group();
   group.name = `bearing-${letter}`;
   const strokes = LETTER_STROKES[letter];
+  // Render each stroke as a filled quad (perpendicular offset by half the
+  // weight) so the letters have actual thickness — WebGL ignores lineWidth,
+  // so thin line-strokes render as unreadable 1px wires.
   const positions: number[] = [];
   for (let i = 0; i < strokes.length; i += 4) {
-    const [x0, y0, x1, y1] = strokes.slice(i, i + 4);
-    positions.push(
-      (x0 - 0.3) * LETTER_SIZE,
-      (y0 - 0.5) * LETTER_SIZE,
-      0,
-      (x1 - 0.3) * LETTER_SIZE,
-      (y1 - 0.5) * LETTER_SIZE,
-      0,
-    );
+    pushStrokeQuad(positions, strokes[i], strokes[i + 1], strokes[i + 2], strokes[i + 3]);
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-  const segments = new LineSegments(
+  const mesh = new Mesh(
     geometry,
-    new LineBasicMaterial({ color: options.color, transparent: true, opacity: 0.9 }),
+    new MeshBasicMaterial({
+      color: options.color,
+      transparent: true,
+      opacity: 0.95,
+      side: DoubleSide,
+    }),
   );
-  group.add(segments);
+  group.add(mesh);
   return group;
+}
+
+const STROKE_WEIGHT = 0.15;
+
+/**
+ * Appends two triangles covering the thickened segment from (x0,y0) to
+ * (x1,y1) in the letter's normalized coordinate space. The quad is offset
+ * perpendicular to the stroke direction by half the weight, then transformed
+ * into world-letter space (scale + origin shift, z = 0).
+ */
+function pushStrokeQuad(
+  positions: number[],
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+): void {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = (-dy / len) * (STROKE_WEIGHT / 2);
+  const py = (dx / len) * (STROKE_WEIGHT / 2);
+
+  const corners = [
+    [x0 + px, y0 + py],
+    [x0 - px, y0 - py],
+    [x1 - px, y1 - py],
+    [x1 + px, y1 + py],
+  ].map(([x, y]) => [(x - 0.3) * LETTER_SIZE, (y - 0.5) * LETTER_SIZE, 0]);
+
+  for (const idx of [
+    [0, 1, 2],
+    [0, 2, 3],
+  ]) {
+    for (const i of idx) {
+      positions.push(corners[i][0], corners[i][1], corners[i][2]);
+    }
+  }
 }
 
 function disposeGeometry(geometry: BufferGeometry): void {

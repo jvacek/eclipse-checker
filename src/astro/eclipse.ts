@@ -164,7 +164,15 @@ function buildView(
     ),
     times: {
       begin: toLocalEvent(begin, observer, opts),
-      peak: toLocalEvent(peakEvent, observer, opts),
+      // The peak event's horizontal coords come from the topocentric sun already
+      // computed above, so the view's `sunAltitude/AzimuthPeakDeg` and
+      // `times.peak` cannot disagree.
+      peak: {
+        utcIso: formatUtcIso(peak),
+        localTime: formatLocalTime(peak, opts.timezone),
+        sunAltitudeDeg: sun.altitude,
+        sunAzimuthDeg: sun.azimuth,
+      },
       end: toLocalEvent(end, observer, opts),
     },
     totalitySeconds:

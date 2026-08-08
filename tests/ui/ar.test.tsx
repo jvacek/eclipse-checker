@@ -492,6 +492,44 @@ describe('ARView (8th Wall engine)', () => {
     await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
   });
 
+  it('re-enters AR cleanly after an exit (new session, no error leak)', async () => {
+    const { unmount } = render(
+      <ARView
+        view={makeView()}
+        onExit={() => undefined}
+        loadEngine={() => Promise.resolve(makeFakeEngine().engine)}
+        createSession={() => ({
+          start: () => Promise.resolve(makeSkyScene()),
+          stop: vi.fn(),
+        })}
+      />,
+    );
+    const section1 = document.querySelector('.ar-view');
+    await waitFor(() => expect(section1).toHaveAttribute('data-status', 'active'));
+    await userEvent.click(screen.getByRole('button', { name: 'Exit AR' }));
+    unmount();
+    document.body.innerHTML = '';
+
+    // Re-enter: a fresh ARView mounts and starts a fresh session without leaking
+    // an error from the previous run.
+    const secondStart = vi.fn(() => Promise.resolve(makeSkyScene()));
+    const secondCreateSession = vi.fn(() => ({ start: secondStart, stop: vi.fn() }));
+    render(
+      <ARView
+        view={makeView()}
+        onExit={() => undefined}
+        loadEngine={() => Promise.resolve(makeFakeEngine().engine)}
+        createSession={secondCreateSession}
+        headingSource={makeOrientationSource()}
+      />,
+    );
+    const section2 = document.querySelector('.ar-view');
+    await waitFor(() => expect(section2).toHaveAttribute('data-status', 'active'));
+    expect(secondCreateSession).toHaveBeenCalledTimes(1);
+    expect(secondStart).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('restores the canvas under the section when FullWindowCanvas moved it to the body', async () => {
     // XRExtras' FullWindowCanvas reparents the canvas into document.body on
     // attach and never moves it back on detach. Exiting must restore it under

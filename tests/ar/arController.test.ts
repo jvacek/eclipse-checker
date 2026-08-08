@@ -211,6 +211,46 @@ describe('createARController', () => {
     expect(dom.canvas.parentElement).toBe(dom.section);
   });
 
+  it('a second start() after stop() is a no-op: no new session, no engine.run, no error', async () => {
+    const sessionFactory = vi.fn();
+    const dom = makeDom();
+    const onStatus = vi.fn();
+    const onError = vi.fn();
+    const onCompass = vi.fn();
+    const controller = createARController({
+      view: makeView(),
+      canvas: dom.canvas,
+      section: dom.section,
+      arrow: dom.arrow,
+      glyph: dom.glyph,
+      headingSource: makeOrientationSource(),
+      loadEngine: () => Promise.resolve(makeFakeEngine()),
+      createSession: (engine, canvas, hooks) => {
+        sessionFactory(engine, canvas, hooks);
+        return {
+          start: () =>
+            Promise.resolve({ scene: new Scene(), camera: { quaternion: new Quaternion() } }),
+          stop: vi.fn(),
+        };
+      },
+      callbacks: { onStatus, onError, onCompass },
+    });
+
+    await controller.start();
+    expect(sessionFactory).toHaveBeenCalledTimes(1);
+    expect(onStatus).toHaveBeenCalledWith('active');
+
+    controller.stop();
+
+    // The same controller is stopped, so a second start() is a deliberate
+    // no-op — it must NOT create another session or call the engine's run()
+    // again (a page may only run() the engine once). It resolves without error.
+    await expect(controller.start()).resolves.toBeUndefined();
+    expect(sessionFactory).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onStatus).toHaveBeenCalledTimes(1);
+  });
+
   it('reports a friendly error and stops the session when startup fails', async () => {
     const { controller, session, onStatus, onError } = makeController({
       session: {

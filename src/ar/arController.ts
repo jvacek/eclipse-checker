@@ -23,6 +23,14 @@ const HEADING_LOG_INTERVAL_MS = 1000;
  * after the app returns from being backgrounded), so the fix is not trusted.
  */
 const COMPASS_ACCURACY_LIMIT_DEG = 15;
+/**
+ * iOS reports poor `webkitCompassAccuracy` while the magnetometer re-calibrates
+ * (right after granting permission, after an app switch, or under magnetic
+ * interference). If accuracy never settles, don't leave the AR view stuck
+ * unaligned: after this grace period a provisional heading is used (and
+ * upgraded the moment a good reading arrives).
+ */
+const CALIBRATION_GRACE_MS = 5000;
 
 export type CompassState = 'requesting' | 'waiting' | 'aligned' | 'denied';
 
@@ -205,6 +213,11 @@ export function createARController(options: ARControllerOptions): ARController {
   let raf = 0;
   let stopHeading: (() => void) | null = null;
   let yawOffsetDeg: number | null = null;
+  /** True when the fix came from a poor-accuracy reading (see CALIBRATION_GRACE_MS). */
+  let yawOffsetProvisional = false;
+  /** When the current calibration attempt stops waiting for good accuracy. */
+  let calibrationDeadlineAt = Date.now() + CALIBRATION_GRACE_MS;
+  let calibrationTimer = 0;
 
   const params = {
     azimuthDeg: view.sunAzimuthPeakDeg,
@@ -218,14 +231,61 @@ export function createARController(options: ARControllerOptions): ARController {
     yawOffsetDeg: 0,
   };
 
+  /** Snapshots the engine-world→compass-north rotation from the current camera. */
+  const captureOffset = (headingDeg: number, accuracyDeg: number | null, provisional: boolean): void => {
+    if (sceneCamera === null) {
+      return;
+    }
+    yawOffsetDeg = northAlignYawOffsetDeg(
+      [
+        sceneCamera.quaternion.x,
+        sceneCamera.quaternion.y,
+        sceneCamera.quaternion.z,
+        sceneCamera.quaternion.w,
+      ],
+      headingDeg,
+    );
+    yawOffsetProvisional = provisional;
+    console.info(
+      AR_LOG_PREFIX,
+      `heading fix ${provisional ? '(provisional) ' : ''}acquired: ${headingDeg.toFixed(1)}° (accuracy ${String(
+        accuracyDeg,
+      )})`,
+    );
+  };
+
+  /**
+   * Warnings when the calibration grace period elapses without a fix: either
+   * accuracy never settled (provisional fix handles that elsewhere) or no
+   * absolute events arrived at all (permission likely blocked).
+   */
+  const armCalibrationTimer = (): void => {
+    window.clearTimeout(calibrationTimer);
+    calibrationTimer = window.setTimeout(() => {
+      if (yawOffsetDeg === null) {
+        console.warn(
+          AR_LOG_PREFIX,
+          `no usable compass heading within ${CALIBRATION_GRACE_MS} ms; deviceorientation events may not be arriving (motion & orientation permission blocked?) — tap Recalibrate compass`,
+        );
+      }
+    }, CALIBRATION_GRACE_MS);
+  };
+
+  const resetCalibration = (): void => {
+    yawOffsetDeg = null;
+    yawOffsetProvisional = false;
+    calibrationDeadlineAt = Date.now() + CALIBRATION_GRACE_MS;
+    armCalibrationTimer();
+  };
+
   // An app switch stops deviceorientation events while backgrounded. When the
   // app comes back the magnetometer is usually mid-recalibration, so the first
-  // fix can be off. Drop the yaw offset so the next accurate heading
-  // re-establishes it from a fresh camera orientation.
+  // fix can be off. Drop the yaw offset so the next heading re-establishes it
+  // from a fresh camera orientation (with a fresh grace period).
   const onResume = () => {
     if (document.visibilityState === 'visible' && yawOffsetDeg !== null) {
       console.info(AR_LOG_PREFIX, 'app foregrounded; re-anchoring compass');
-      yawOffsetDeg = null;
+      resetCalibration();
     }
   };
 
@@ -287,38 +347,51 @@ export function createARController(options: ARControllerOptions): ARController {
       sceneCamera = xrScene.camera as SkyCameraLike;
 
       let lastHeadingLogAt = 0;
+      resetCalibration();
       stopHeading = heading.start(({ headingDeg, absolute, accuracyDeg }) => {
         const now = Date.now();
-        if (absolute && headingDeg !== null && accuracyOk(accuracyDeg)) {
-          // The engine world frame is fixed for the session, so the offset
-          // between compass north and that frame is a constant — capture it
-          // once per fix (first fix, foreground re-anchor, or explicit
-          // recalibrate) and hold it, instead of re-deriving it per frame
-          // where magnetometer noise would shake the sun.
-          if (yawOffsetDeg === null && sceneCamera !== null) {
-            yawOffsetDeg = northAlignYawOffsetDeg(
-              [
-                sceneCamera.quaternion.x,
-                sceneCamera.quaternion.y,
-                sceneCamera.quaternion.z,
-                sceneCamera.quaternion.w,
-              ],
-              headingDeg,
-            );
-            console.info(
+        if (!absolute || headingDeg === null) {
+          if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
+            lastHeadingLogAt = now;
+            console.debug(
               AR_LOG_PREFIX,
-              `heading fix acquired: ${headingDeg.toFixed(1)}° (accuracy ${String(accuracyDeg)})`,
+              `ignoring heading event (absolute=${String(absolute)}, headingDeg=${String(
+                headingDeg,
+              )}, accuracy=${String(accuracyDeg)})`,
             );
           }
+          return;
+        }
+
+        const accurate = accuracyOk(accuracyDeg);
+        const graceElapsed = now >= calibrationDeadlineAt;
+
+        if (yawOffsetDeg === null) {
+          if (accurate) {
+            // The engine world frame is fixed for the session, so the offset
+            // between compass north and that frame is a constant — capture it
+            // once per fix (first fix, foreground re-anchor, or explicit
+            // recalibrate) and hold it, instead of re-deriving it per frame
+            // where magnetometer noise would shake the sun.
+            captureOffset(headingDeg, accuracyDeg, false);
+            callbacks.onCompass('aligned');
+          } else if (graceElapsed) {
+            // Accuracy never settled within the grace period (stubborn
+            // magnetometer / interference). Fall back to a provisional fix so
+            // the AR view is not stuck unaligned; it is upgraded the moment an
+            // accurate reading arrives.
+            captureOffset(headingDeg, accuracyDeg, true);
+            console.warn(
+              AR_LOG_PREFIX,
+              `compass accuracy still poor after ${CALIBRATION_GRACE_MS} ms (${String(
+                accuracyDeg,
+              )}°); using a provisional heading — move the phone in a figure-8 or tap Recalibrate`,
+            );
+          }
+        } else if (yawOffsetProvisional && accurate) {
+          // A good reading arrived; upgrade the provisional fix to a trusted one.
+          captureOffset(headingDeg, accuracyDeg, false);
           callbacks.onCompass('aligned');
-        } else if (now - lastHeadingLogAt >= HEADING_LOG_INTERVAL_MS) {
-          lastHeadingLogAt = now;
-          console.debug(
-            AR_LOG_PREFIX,
-            `ignoring heading event (absolute=${String(absolute)}, headingDeg=${String(
-              headingDeg,
-            )}, accuracy=${String(accuracyDeg)})`,
-          );
         }
       });
 
@@ -349,6 +422,7 @@ export function createARController(options: ARControllerOptions): ARController {
     stopped = true;
     document.removeEventListener('visibilitychange', onResume);
     cancelAnimationFrame(raf);
+    window.clearTimeout(calibrationTimer);
     stopHeading?.();
     overlay?.dispose();
     session?.stop();
@@ -356,10 +430,13 @@ export function createARController(options: ARControllerOptions): ARController {
   };
 
   const recalibrate = async (): Promise<boolean> => {
-    // Drop the captured yaw offset so the next accurate heading re-anchors to a
-    // fresh reading. Re-surface the (usually already-granted) orientation
-    // permission; on iOS this must run inside the button's user gesture.
-    yawOffsetDeg = null;
+    // Drop the captured yaw offset so the next heading re-anchors to a fresh
+    // reading (with a fresh grace period). Re-surface the (usually
+    // already-granted) orientation permission; on iOS this must run inside the
+    // button's user gesture. Note iOS only shows the prompt once per site —
+    // after a grant it resolves 'granted' without re-prompting, so recalibration
+    // succeeds on the next accurate reading rather than a new dialog.
+    resetCalibration();
     callbacks.onCompass('requesting');
     console.info(AR_LOG_PREFIX, 'recalibrate: cleared yaw offset, re-requesting permission');
     const granted = await requestDeviceOrientationPermission(

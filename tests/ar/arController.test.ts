@@ -6,6 +6,7 @@ import { Quaternion, Scene } from 'three';
 import type { EclipseView } from '../../src/astro';
 import { createARController } from '../../src/ar/arController';
 import type { EngineApiLike, EngineSessionApi } from '../../src/ar/engineSession';
+import { SUN_DISTANCE } from '../../src/ar/scene';
 import type { DeviceOrientationEventLike, DeviceOrientationLike } from '../../src/sensors';
 
 function makeView(): EclipseView {
@@ -234,6 +235,81 @@ describe('createARController', () => {
     expect(onCompass).toHaveBeenCalledWith('requesting');
     expect(onCompass).toHaveBeenLastCalledWith('waiting');
     expect(glyph).toBeTruthy();
+    controller.stop();
+  });
+
+  it('uses a provisional heading once the calibration grace period elapses, then upgrades', async () => {
+    const dom = makeDom();
+    const sky = new Scene();
+    const session = {
+      start: () => Promise.resolve({ scene: sky, camera: { quaternion: new Quaternion() } }),
+      stop: vi.fn(),
+    };
+    const onCompass = vi.fn();
+    const headingSource = makeOrientationSource();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+
+    const controller = createARController({
+      view: makeView(),
+      canvas: dom.canvas,
+      section: dom.section,
+      arrow: dom.arrow,
+      glyph: dom.glyph,
+      headingSource,
+      loadEngine: () => Promise.resolve(makeFakeEngine()),
+      createSession: () => session,
+      callbacks: { onStatus: vi.fn(), onError: vi.fn(), onCompass },
+    });
+    await controller.start();
+
+    // Poor accuracy before the 5s grace deadline: no fix yet, still waiting.
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 40,
+    });
+    expect(onCompass).not.toHaveBeenCalledWith('aligned');
+
+    // After the deadline a poor reading is used provisionally (sun placed) but
+    // the compass is NOT reported aligned — the recalibrate button stays visible.
+    nowSpy.mockReturnValue(7_000);
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 90,
+      webkitCompassAccuracy: 40,
+    });
+    expect(onCompass).not.toHaveBeenCalledWith('aligned');
+
+    const sun = sky.children[0] as { position: { x: number; z: number } };
+    expect(sun).toBeDefined();
+    const az = (280 - 90) * (Math.PI / 180);
+    const alt = 7 * (Math.PI / 180);
+    await vi.waitFor(() => {
+      expect(sun.position.x).toBeCloseTo(Math.sin(az) * Math.cos(alt) * SUN_DISTANCE, 4);
+      expect(sun.position.z).toBeCloseTo(-Math.cos(az) * Math.cos(alt) * SUN_DISTANCE, 4);
+    });
+
+    // A good reading upgrades the provisional fix and marks the compass aligned.
+    nowSpy.mockReturnValue(8_000);
+    headingSource.listeners[0]({
+      alpha: 0,
+      beta: 90,
+      gamma: 0,
+      absolute: true,
+      webkitCompassHeading: 100,
+      webkitCompassAccuracy: 2,
+    });
+    expect(onCompass).toHaveBeenCalledWith('aligned');
+    await vi.waitFor(() => {
+      expect(sun.position.x).toBeCloseTo(Math.sin((280 - 100) * (Math.PI / 180)) * Math.cos(alt) * SUN_DISTANCE, 4);
+    });
+
     controller.stop();
   });
 });

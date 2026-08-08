@@ -1,0 +1,315 @@
+import { useEffect, useRef, useState } from 'react';
+import * as THREE from 'three';
+
+import type { EclipseView } from '../astro';
+import {
+  createEngineSession,
+  type EngineApiLike,
+  type EngineSessionApi,
+} from '../ar/engineSession';
+import { createBrowserEngineLoader, type EngineWindowLike } from '../ar/engineLoader';
+import { northAlignYawOffsetDeg } from '../ar/math';
+import { createSkyOverlay, placeSkySun, type SkyOverlay } from '../ar/scene';
+import { HeadingTracker, requestDeviceOrientationPermission, type DeviceOrientationLike } from '../sensors';
+
+const XR_ENGINE_LICENSE_URL = 'https://github.com/8thwall/engine/blob/main/LICENSE';
+const AR_START_TIMEOUT_MS = 30_000;
+
+type CompassState = 'requesting' | 'waiting' | 'aligned' | 'denied';
+
+function compassMessage(state: CompassState): string {
+  switch (state) {
+    case 'aligned':
+      return 'Compass aligned';
+    case 'requesting':
+      return 'Requesting compass access…';
+    case 'denied':
+      return 'Compass permission denied — the AR view is not north-aligned';
+    default:
+      return 'Point your phone north to align the compass';
+  }
+}
+
+export interface ARViewProps {
+  view: EclipseView;
+  onExit: () => void;
+  /** Whether deviceorientation permission was granted (requested by the AR-entry gesture). */
+  headingAuthorized?: boolean;
+  /** Injectable engine loader (defaults to the browser lazy loader). */
+  loadEngine?: () => Promise<unknown>;
+  /** Injectable session factory (defaults to the XR8 three.js session). */
+  createSession?: (engine: EngineApiLike, canvas: HTMLCanvasElement) => EngineSessionApi;
+  /** Injectable heading source (defaults to `window`). */
+  headingSource?: DeviceOrientationLike;
+}
+
+interface SkyCameraLike {
+  quaternion: { x: number; y: number; z: number; w: number };
+}
+
+function engineWindow(): EngineWindowLike {
+  return window as unknown as EngineWindowLike;
+}
+
+function defaultHeadingSource(): DeviceOrientationLike {
+  return {
+    addEventListener: (type, listener) => window.addEventListener(type, listener),
+    removeEventListener: (type, listener) => window.removeEventListener(type, listener),
+  };
+}
+
+/**
+ * The engine's `Threejs` pipeline module instantiates its renderer from a
+ * global `window.THREE` namespace; expose the app's three.js module to it before
+ * the camera pipeline starts.
+ */
+function ensureGlobalThree(): void {
+  (window as unknown as { THREE: typeof THREE }).THREE = THREE;
+}
+
+/**
+ * Pre-flight camera check so we can fail fast with a clear message instead of
+ * waiting on the engine to report that no session could start. When the API is
+ * missing or errors, assume the engine will sort it out (returns true).
+ */
+async function hasCamera(win: Window): Promise<boolean> {
+  const media = win.navigator?.mediaDevices;
+  if (typeof media?.enumerateDevices !== 'function') {
+    return true;
+  }
+  try {
+    const devices = await media.enumerateDevices();
+    return devices.some((device) => device.kind === 'videoinput');
+  } catch {
+    return true;
+  }
+}
+
+/** Translates raw engine errors into guidance a user can act on. */
+function friendlyError(message: string): string {
+  if (/no valid session manager/i.test(message)) {
+    return "AR isn't supported on this device or browser. Try on a phone with a camera and motion sensors.";
+  }
+  if (/timed out/i.test(message)) {
+    return 'AR took too long to start. Try again.';
+  }
+  if (/camera|getusermedia|video input/i.test(message)) {
+    return 'No camera was found, or camera access was denied. AR needs the camera.';
+  }
+  return message;
+}
+
+export function ARView({
+  view,
+  onExit,
+  headingAuthorized = true,
+  loadEngine,
+  createSession,
+  headingSource,
+}: ARViewProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const onExitRef = useRef(onExit);
+  const headingDegRef = useRef<number | null>(null);
+
+  const [status, setStatus] = useState<'starting' | 'active' | 'error'>('starting');
+  const [error, setError] = useState<string | null>(null);
+  const [compass, setCompass] = useState<CompassState>(headingAuthorized ? 'waiting' : 'denied');
+
+  useEffect(() => {
+    onExitRef.current = onExit;
+  }, [onExit]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) {
+      return;
+    }
+
+    const source = headingSource ?? defaultHeadingSource();
+    const loader = loadEngine ?? createBrowserEngineLoader(engineWindow());
+    const sessionFactory = createSession ?? defaultSessionFactory;
+    const params = {
+      azimuthDeg: view.sunAzimuthPeakDeg,
+      altitudeDeg: view.sunAltitudePeakDeg,
+      rSunDeg: view.rSunDeg,
+      rMoonDeg: view.rMoonDeg,
+      separationDeg: view.separationDeg,
+      positionAngleDeg: view.moonPositionAngleDeg,
+      obscuration: view.obscuration,
+      yawOffsetDeg: 0,
+    };
+
+    let disposed = false;
+    let session: EngineSessionApi | null = null;
+    let overlay: SkyOverlay | null = null;
+    let sceneCamera: SkyCameraLike | null = null;
+    let raf = 0;
+    let stopHeading: (() => void) | null = null;
+    const heading = new HeadingTracker(source);
+
+    const run = async () => {
+      try {
+        if (!(await hasCamera(window))) {
+          throw new Error('No camera was found. AR needs the camera.');
+        }
+        const engine = (await loader()) as EngineApiLike;
+        if (disposed) {
+          return;
+        }
+        session = sessionFactory(engine, canvas);
+        ensureGlobalThree();
+        const xrScene = await withTimeout(session.start(), AR_START_TIMEOUT_MS);
+        if (disposed) {
+          return;
+        }
+        overlay = createSkyOverlay(xrScene.scene as THREE.Scene);
+        sceneCamera = xrScene.camera as SkyCameraLike;
+
+        stopHeading = heading.start(({ headingDeg, absolute }) => {
+          if (absolute && headingDeg !== null) {
+            headingDegRef.current = headingDeg;
+            setCompass('aligned');
+          }
+        });
+
+        const tick = () => {
+          if (overlay !== null && sceneCamera !== null) {
+            if (headingDegRef.current !== null) {
+              params.yawOffsetDeg = northAlignYawOffsetDeg(
+                [
+                  sceneCamera.quaternion.x,
+                  sceneCamera.quaternion.y,
+                  sceneCamera.quaternion.z,
+                  sceneCamera.quaternion.w,
+                ],
+                headingDegRef.current,
+              );
+            }
+            placeSkySun(overlay, params);
+            overlay.sun.quaternion.set(
+              sceneCamera.quaternion.x,
+              sceneCamera.quaternion.y,
+              sceneCamera.quaternion.z,
+              sceneCamera.quaternion.w,
+            );
+          }
+          raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick);
+        setStatus('active');
+      } catch (err) {
+        if (!disposed) {
+          setStatus('error');
+          setError(friendlyError(err instanceof Error ? err.message : String(err)));
+        }
+      }
+    };
+    void run();
+
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(raf);
+      stopHeading?.();
+      overlay?.dispose();
+      session?.stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const recalibrate = async () => {
+    // Drop the current compass fix so the next frame re-anchors to a fresh
+    // heading. Re-surface the (usually already-granted) orientation permission;
+    // on iOS this must run inside the button's user gesture.
+    headingDegRef.current = null;
+    setCompass('requesting');
+    const granted = await requestDeviceOrientationPermission(
+      engineWindow() as unknown as DeviceOrientationLike,
+    );
+    setCompass(granted ? 'waiting' : 'denied');
+  };
+
+  return (
+    <section className="ar-view" data-status={status}>
+      <canvas ref={canvasRef} className="ar-canvas" />
+
+      {status === 'starting' && <p className="ar-status">Starting AR…</p>}
+
+      {status === 'error' && (
+        <div className="ar-error" role="alert">
+          <p>{error ?? 'AR is unavailable in this browser.'}</p>
+          <button type="button" className="primary" onClick={() => onExitRef.current()}>
+            Back to results
+          </button>
+        </div>
+      )}
+
+      {status === 'active' && (
+        <p className="ar-compass" data-state={compass}>
+          {compassMessage(compass)}
+        </p>
+      )}
+
+      <div className="ar-safety">
+        <p>
+          Safety: never look at the Sun through any lens or AR overlay. The overlay is a simulation
+          — view the eclipse only with certified solar filters.
+        </p>
+        <p className="ar-attribution">
+          AR powered by the 8th Wall engine (Niantic Spatial). See the{' '}
+          <a href={XR_ENGINE_LICENSE_URL} target="_blank" rel="noreferrer">
+            XR Engine License Agreement
+          </a>
+          .
+        </p>
+        {status === 'active' && (
+          <button type="button" className="secondary" onClick={recalibrate}>
+            Recalibrate compass
+          </button>
+        )}
+        <button type="button" className="primary" onClick={() => onExitRef.current()}>
+          Exit AR
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function defaultSessionFactory(engine: EngineApiLike, canvas: HTMLCanvasElement): EngineSessionApi {
+  return createEngineSession({
+    engine,
+    canvas,
+    extraModules: fullWindowCanvasModules(window),
+  });
+}
+
+/**
+ * The engine letterboxes the camera feed to a centered sub-rectangle of the
+ * canvas by default; XRExtras' FullWindowCanvas module resizes the canvas to
+ * fill the window (cover-cropping the feed) and re-runs on resize/orientation
+ * changes. Loaded lazily because it lives in the xrextras bundle.
+ */
+function fullWindowCanvasModules(win: Window): unknown[] {
+  const xrextras = (
+    win as unknown as {
+      XRExtras?: { FullWindowCanvas?: { pipelineModule?: () => unknown } };
+    }
+  ).XRExtras;
+  const module = xrextras?.FullWindowCanvas?.pipelineModule?.();
+  return module === undefined ? [] : [module];
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timed out after ${ms} ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (reason) => {
+        clearTimeout(timer);
+        reject(reason);
+      },
+    );
+  });
+}

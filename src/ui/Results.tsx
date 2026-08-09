@@ -49,10 +49,7 @@ export function Results({
           title="Start over"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-            <path
-              d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"
-              fill="currentColor"
-            />
+            <path d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z" fill="currentColor" />
           </svg>
         </button>
       </div>

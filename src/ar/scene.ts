@@ -270,7 +270,11 @@ function buildSunBeam(): SunBeam {
   return { group, floor, rise };
 }
 
-function placeSunBeam(beam: SunBeam, sunPosition: { x: number; y: number; z: number }, placedAzimuth: number): void {
+function placeSunBeam(
+  beam: SunBeam,
+  sunPosition: { x: number; y: number; z: number },
+  placedAzimuth: number,
+): void {
   const dir = sunDirectionVector(placedAzimuth, 0);
   // Ring-edge point at the sun's azimuth, on the floor.
   const ex = dir.x * SUN_DISTANCE;
@@ -406,13 +410,7 @@ const STROKE_WEIGHT = 0.15;
  * perpendicular to the stroke direction by half the weight, then transformed
  * into world-letter space (scale + origin shift, z = 0).
  */
-function pushStrokeQuad(
-  positions: number[],
-  x0: number,
-  y0: number,
-  x1: number,
-  y1: number,
-): void {
+function pushStrokeQuad(positions: number[], x0: number, y0: number, x1: number, y1: number): void {
   const dx = x1 - x0;
   const dy = y1 - y0;
   const len = Math.hypot(dx, dy) || 1;

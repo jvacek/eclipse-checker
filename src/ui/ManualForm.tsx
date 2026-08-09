@@ -47,41 +47,41 @@ export function ManualForm({ notice, onBack, onSubmit }: ManualFormProps) {
         </button>
       )}
       <form className="form" onSubmit={submit}>
-      {notice !== undefined && <p className="form-notice">{notice}</p>}
-      <label>
-        Latitude (decimal or DMS, e.g. 40.4168 or 40°25'S)
-        <input
-          value={lat}
-          onChange={(event) => setLat(event.target.value)}
-          placeholder="e.g. 40.4168 or 40°25'S"
-          inputMode="decimal"
-        />
-      </label>
-      <label>
-        Longitude (decimal or DMS)
-        <input
-          value={lon}
-          onChange={(event) => setLon(event.target.value)}
-          placeholder="e.g. -3.7038 or 3°42'W"
-          inputMode="decimal"
-        />
-      </label>
-      <label>
-        Height (m)
-        <input
-          value={height}
-          onChange={(event) => setHeight(event.target.value)}
-          placeholder="0"
-          inputMode="decimal"
-        />
-      </label>
-      {error !== null && (
-        <p className="message error" role="alert">
-          {error}
-        </p>
-      )}
-      <button type="submit">Show eclipse</button>
-    </form>
+        {notice !== undefined && <p className="form-notice">{notice}</p>}
+        <label>
+          Latitude (decimal or DMS, e.g. 40.4168 or 40°25'S)
+          <input
+            value={lat}
+            onChange={(event) => setLat(event.target.value)}
+            placeholder="e.g. 40.4168 or 40°25'S"
+            inputMode="decimal"
+          />
+        </label>
+        <label>
+          Longitude (decimal or DMS)
+          <input
+            value={lon}
+            onChange={(event) => setLon(event.target.value)}
+            placeholder="e.g. -3.7038 or 3°42'W"
+            inputMode="decimal"
+          />
+        </label>
+        <label>
+          Height (m)
+          <input
+            value={height}
+            onChange={(event) => setHeight(event.target.value)}
+            placeholder="0"
+            inputMode="decimal"
+          />
+        </label>
+        {error !== null && (
+          <p className="message error" role="alert">
+            {error}
+          </p>
+        )}
+        <button type="submit">Show eclipse</button>
+      </form>
     </>
   );
 }

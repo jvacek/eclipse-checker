@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import type { EclipseView } from '../astro';
-import {
-  createARController,
-  type ARController,
-  type CompassState,
-} from '../ar/arController';
+import { createARController, type ARController, type CompassState } from '../ar/arController';
 import type { EngineApiLike, EngineSessionApi } from '../ar/engineSession';
 import { isCompassAvailable, type DeviceOrientationLike } from '../sensors';
 import { AccuracyGauge, COMPASS_CALIBRATION_HINT } from './AccuracyGauge';

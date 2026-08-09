@@ -4,6 +4,7 @@ import { parseCoordinate } from '../lib/coords';
 
 interface ManualFormProps {
   notice?: string;
+  onBack?: () => void;
   onSubmit: (location: { lat: number; lon: number; heightMeters: number }) => void;
 }
 
@@ -11,7 +12,7 @@ const DEFAULT_LAT = '';
 const DEFAULT_LON = '';
 const DEFAULT_HEIGHT = '';
 
-export function ManualForm({ notice, onSubmit }: ManualFormProps) {
+export function ManualForm({ notice, onBack, onSubmit }: ManualFormProps) {
   const [lat, setLat] = useState(DEFAULT_LAT);
   const [lon, setLon] = useState(DEFAULT_LON);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
@@ -39,7 +40,13 @@ export function ManualForm({ notice, onSubmit }: ManualFormProps) {
   };
 
   return (
-    <form className="form" onSubmit={submit}>
+    <>
+      {onBack !== undefined && (
+        <button type="button" className="link back" onClick={onBack}>
+          ← Back
+        </button>
+      )}
+      <form className="form" onSubmit={submit}>
       {notice !== undefined && <p className="form-notice">{notice}</p>}
       <label>
         Latitude (decimal or DMS, e.g. 40.4168 or 40°25'S)
@@ -75,5 +82,6 @@ export function ManualForm({ notice, onSubmit }: ManualFormProps) {
       )}
       <button type="submit">Show eclipse</button>
     </form>
+    </>
   );
 }

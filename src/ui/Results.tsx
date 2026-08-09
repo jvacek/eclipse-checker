@@ -63,6 +63,10 @@ export function Results({
         </p>
       )}
 
+      <p className="results-verdict" data-tier={verdict.tier} role="status">
+        {verdict.text}
+      </p>
+
       <dl className="results-dl">
         <dt>Peak</dt>
         <dd>
@@ -92,8 +96,6 @@ export function Results({
           altitude {view.sunAltitudePeakDeg.toFixed(1)}°, azimuth{' '}
           {view.sunAzimuthPeakDeg.toFixed(1)}°
         </dd>
-        <dt>Verdict</dt>
-        <dd data-tier={verdict.tier}>{verdict.text}</dd>
       </dl>
 
       {locationAccuracyMeters !== null && (

@@ -12,6 +12,8 @@ import {
   type GeolocationData,
 } from './sensors';
 import { ARView } from './ui/ARView';
+import { AccuracyGauge, COMPASS_CALIBRATION_HINT } from './ui/AccuracyGauge';
+import { COMPASS_ACCURACY_LIMIT_DEG } from './ar/arController';
 import { Landing } from './ui/Landing';
 import { ManualForm } from './ui/ManualForm';
 import { Results } from './ui/Results';
@@ -164,12 +166,18 @@ export default function App() {
 
         {phase.kind === 'locating' && <Status message="Requesting your location…" />}
 
-        {phase.kind === 'manual' && <ManualForm notice={phase.notice} onSubmit={submitManual} />}
+        {phase.kind === 'manual' && (
+          <ManualForm
+            notice={phase.notice}
+            onBack={() => setPhase({ kind: 'landing' })}
+            onSubmit={submitManual}
+          />
+        )}
 
         {phase.kind === 'error' && (
           <>
             <Status message={phase.message} tone="error" />
-            <ManualForm onSubmit={submitManual} />
+            <ManualForm onBack={() => setPhase({ kind: 'landing' })} onSubmit={submitManual} />
           </>
         )}
 
@@ -203,6 +211,14 @@ export default function App() {
                   </button>
                 )}
               </div>
+              {headingAuthorized && heading.accuracyDeg !== null && (
+                <div className="sky-map-accuracy">
+                  <AccuracyGauge accuracyDeg={heading.accuracyDeg} />
+                  {heading.accuracyDeg > COMPASS_ACCURACY_LIMIT_DEG && (
+                    <p className="sky-map-hint">{COMPASS_CALIBRATION_HINT}</p>
+                  )}
+                </div>
+              )}
               <SkyMap view={phase.view} headingDeg={heading.headingDeg} />
             </div>
           </div>

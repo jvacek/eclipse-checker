@@ -10,6 +10,7 @@ export type { GeolocationData, GeolocationLike, GeolocationPositionLike } from '
 export {
   compassHeading,
   HeadingTracker,
+  isCompassAvailable,
   requestDeviceOrientationPermission,
 } from './deviceOrientation';
 export type {

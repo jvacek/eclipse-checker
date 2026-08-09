@@ -8,6 +8,7 @@ import { usePermission } from './hooks/usePermission';
 import { buildShareUrl, parseShareParams } from './lib/shareUrl';
 import {
   createGeolocationRequestor,
+  isCompassAvailable,
   requestDeviceOrientationPermission,
   type GeolocationData,
 } from './sensors';
@@ -16,6 +17,7 @@ import { AccuracyGauge, COMPASS_CALIBRATION_HINT } from './ui/AccuracyGauge';
 import { COMPASS_ACCURACY_LIMIT_DEG } from './ar/arController';
 import { Landing } from './ui/Landing';
 import { ManualForm } from './ui/ManualForm';
+import { QrPrompt } from './ui/QrPrompt';
 import { Results } from './ui/Results';
 import { SkyMap } from './ui/SkyMap';
 import { Status } from './ui/Status';
@@ -94,6 +96,7 @@ export default function App() {
   const [headingAuthorized, setHeadingAuthorized] = useState(false);
   const [compassPending, setCompassPending] = useState(false);
   const heading = useHeading(headingAuthorized);
+  const compassAvailable = isCompassAvailable();
 
   useEffect(() => {
     if (phase.kind === 'results') {
@@ -140,14 +143,15 @@ export default function App() {
       '[eclipse-checker:ar] entry: orientation permission',
       granted ? 'granted' : 'denied',
     );
-    if (granted) {
+    if (granted && compassAvailable) {
       // Only listen for deviceorientation once permission is granted — iOS logs
       // "No device orientation events will be fired" if a listener is registered
       // before the permission request. This also switches on the 2D sky-map
-      // heading when returning to results.
+      // heading when returning to results. A device with no compass can't use a
+      // heading at all, so don't mark it authorized on the results screen.
       setHeadingAuthorized(true);
     }
-    setPhase({ kind: 'ar', view, headingAuthorized: granted });
+    setPhase({ kind: 'ar', view, headingAuthorized: granted && compassAvailable });
   };
 
   return (
@@ -200,7 +204,7 @@ export default function App() {
                   <p className="compass-on" role="status">
                     Compass active
                   </p>
-                ) : (
+                ) : compassAvailable ? (
                   <button
                     type="button"
                     className="secondary"
@@ -209,6 +213,8 @@ export default function App() {
                   >
                     {compassPending ? 'Enabling…' : 'Activate compass'}
                   </button>
+                ) : (
+                  <QrPrompt compact />
                 )}
               </div>
               {headingAuthorized && heading.accuracyDeg !== null && (

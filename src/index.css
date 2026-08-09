@@ -381,6 +381,71 @@ button.link {
   background: transparent;
 }
 
+.ar-qr-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  min-height: 100vh;
+  padding: 2rem 1.25rem;
+  text-align: center;
+  background: #0b0e14;
+}
+
+.ar-qr-panel h2 {
+  margin: 0;
+}
+
+.ar-qr-panel p {
+  max-width: 26rem;
+  color: #9aa3b2;
+}
+
+.ar-qr {
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.5rem;
+  max-width: 220px;
+  height: auto;
+}
+
+.ar-qr-link {
+  color: #6ea8fe;
+  word-break: break-all;
+}
+
+.qr-prompt-qr {
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.4rem;
+  height: auto;
+}
+
+.qr-prompt-link {
+  color: #6ea8fe;
+  word-break: break-all;
+}
+
+.qr-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid #2c3342;
+  border-radius: 8px;
+  background: #10141d;
+  text-align: center;
+}
+
+.qr-prompt-copy {
+  margin: 0;
+  color: #9aa3b2;
+  font-size: 0.92rem;
+}
+
 .ar-video,
 .ar-stage,
 .ar-canvas {

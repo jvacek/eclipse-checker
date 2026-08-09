@@ -115,6 +115,38 @@ describe('App geolocation flow', () => {
     expect(screen.getByText(/Location accuracy ±20 m/)).toBeInTheDocument();
   });
 
+  it('shows a QR prompt instead of the compass button when no compass is available', async () => {
+    stubGeolocation(successGeo({ lat: 64.1466, lon: -21.9426 }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Find my location' }));
+    await screen.findByRole('heading', { name: /Total eclipse/ });
+
+    // jsdom has no touch/coarse pointer, so isCompassAvailable() is false.
+    expect(screen.queryByRole('button', { name: 'Activate compass' })).not.toBeInTheDocument();
+    expect(document.querySelector('.qr-prompt-qr')).not.toBeNull();
+    expect(screen.getByText(/Scan to open on your device/i)).toBeInTheDocument();
+  });
+
+  it('does not mark the compass active after returning from the no-compass AR view', async () => {
+    stubGeolocation(successGeo({ lat: 64.1466, lon: -21.9426 }));
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Find my location' }));
+    await screen.findByRole('heading', { name: /Total eclipse/ });
+
+    // Enter AR (no compass → QR prompt), then back out to results.
+    await user.click(screen.getByRole('button', { name: 'View in AR' }));
+    expect(await screen.findByText(/AR needs a compass/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Back to results' }));
+
+    // The compass was never authorized on this device, so results must not
+    // claim it is active — the QR prompt should remain.
+    await screen.findByRole('heading', { name: /Total eclipse/ });
+    expect(screen.queryByText('Compass active')).not.toBeInTheDocument();
+    expect(document.querySelector('.qr-prompt-qr')).not.toBeNull();
+  });
+
   it('falls back to the manual form when permission is denied', async () => {
     stubGeolocation(deniedGeo());
     const user = userEvent.setup();

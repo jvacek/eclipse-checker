@@ -107,6 +107,7 @@ function renderActive(view = makeView()) {
     <ARView
       view={view}
       onExit={() => undefined}
+      compassAvailable={true}
       loadEngine={() => Promise.resolve(engine)}
       createSession={createSession}
       headingSource={orientation}
@@ -153,6 +154,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(engine)}
         headingSource={makeOrientationSource()}
       />,
@@ -463,6 +465,7 @@ describe('ARView (8th Wall engine)', () => {
         view={makeView()}
         onExit={() => undefined}
         headingAuthorized={false}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(engine)}
         createSession={() => ({ start: () => Promise.resolve(sky), stop: vi.fn() })}
       />,
@@ -481,6 +484,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={onExit}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(engine)}
         createSession={() => ({ start: () => Promise.resolve(sky), stop: vi.fn() })}
       />,
@@ -497,6 +501,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(makeFakeEngine().engine)}
         createSession={() => ({
           start: () => Promise.resolve(makeSkyScene()),
@@ -518,6 +523,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(makeFakeEngine().engine)}
         createSession={secondCreateSession}
         headingSource={makeOrientationSource()}
@@ -541,6 +547,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(engine)}
         createSession={() => ({ start: () => Promise.resolve(sky), stop: vi.fn() })}
       />,
@@ -563,6 +570,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(engine)}
         createSession={() => ({
           start: () => Promise.reject(new Error('engine exploded')),
@@ -602,6 +610,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={() => Promise.reject(new Error('engine exploded'))}
         createSession={() => ({ start: () => Promise.resolve(makeSkyScene()), stop: vi.fn() })}
       />,
@@ -617,6 +626,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(engine)}
         createSession={() => ({
           start: () =>
@@ -639,6 +649,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={() => Promise.resolve(engine)}
         createSession={() => ({
           start: () => Promise.reject(new Error('engine exploded')),
@@ -662,6 +673,7 @@ describe('ARView (8th Wall engine)', () => {
       <ARView
         view={makeView()}
         onExit={() => undefined}
+        compassAvailable={true}
         loadEngine={loadEngine}
         createSession={() => ({ start: () => Promise.resolve(makeSkyScene()), stop: vi.fn() })}
       />,
@@ -682,5 +694,44 @@ describe('ARView (8th Wall engine)', () => {
     const arrow = document.querySelector('.ar-sun-arrow') as HTMLElement;
     // Identity camera, default view: sun azimuth 280°, altitude 7° → behind-right.
     await waitFor(() => expect(arrow).not.toHaveAttribute('hidden'));
+  });
+
+  it('shows a QR prompt instead of starting AR when no compass is available', async () => {
+    const loadEngine = vi.fn(() => Promise.resolve(makeFakeEngine().engine));
+    render(
+      <ARView
+        view={makeView()}
+        onExit={() => undefined}
+        compassAvailable={false}
+        loadEngine={loadEngine}
+        createSession={() => ({ start: () => Promise.resolve(makeSkyScene()), stop: vi.fn() })}
+      />,
+    );
+    expect(document.querySelector('.ar-view')).toHaveAttribute('data-status', 'no-compass');
+    expect(screen.getByText(/AR needs a compass/i)).toBeInTheDocument();
+    const qr = document.querySelector('.qr-prompt-qr') as HTMLImageElement;
+    expect(qr).not.toBeNull();
+    expect(qr.src).toContain('eclipse-checker-qr.svg');
+    expect(screen.getByRole('link', { name: /eclipse-checker\.vercel\.app/ })).toHaveAttribute(
+      'href',
+      expect.stringContaining('eclipse-checker.vercel.app'),
+    );
+    expect(loadEngine).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Back to results' })).toBeInTheDocument();
+  });
+
+  it('calls onExit when backing out of the no-compass QR prompt', async () => {
+    const onExit = vi.fn();
+    render(
+      <ARView
+        view={makeView()}
+        onExit={onExit}
+        compassAvailable={false}
+        loadEngine={() => Promise.resolve(makeFakeEngine().engine)}
+        createSession={() => ({ start: () => Promise.resolve(makeSkyScene()), stop: vi.fn() })}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Back to results' }));
+    await waitFor(() => expect(onExit).toHaveBeenCalledTimes(1));
   });
 });

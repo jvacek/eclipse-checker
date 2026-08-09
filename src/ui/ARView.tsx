@@ -7,8 +7,9 @@ import {
   type CompassState,
 } from '../ar/arController';
 import type { EngineApiLike, EngineSessionApi } from '../ar/engineSession';
-import type { DeviceOrientationLike } from '../sensors';
+import { isCompassAvailable, type DeviceOrientationLike } from '../sensors';
 import { AccuracyGauge, COMPASS_CALIBRATION_HINT } from './AccuracyGauge';
+import { QrPrompt } from './QrPrompt';
 
 const XR_ENGINE_LICENSE_URL = 'https://github.com/8thwall/engine/blob/main/LICENSE';
 const AR_LOG_PREFIX = '[eclipse-checker:ar]';
@@ -33,6 +34,8 @@ export interface ARViewProps {
   onExit: () => void;
   /** Whether deviceorientation permission was granted (requested by the AR-entry gesture). */
   headingAuthorized?: boolean;
+  /** Whether the device has a compass. When false the AR view can't align, so a QR prompt is shown instead. */
+  compassAvailable?: boolean;
   /** Injectable engine loader (defaults to the browser lazy loader). */
   loadEngine?: () => Promise<unknown>;
   /** Injectable session factory (defaults to the XR8 three.js session). */
@@ -51,6 +54,7 @@ export function ARView({
   view,
   onExit,
   headingAuthorized = true,
+  compassAvailable = isCompassAvailable(),
   loadEngine,
   createSession,
   headingSource,
@@ -83,6 +87,9 @@ export function ARView({
   }, [onExit]);
 
   useEffect(() => {
+    if (!compassAvailable) {
+      return;
+    }
     const canvas = canvasRef.current;
     if (canvas === null) {
       return;
@@ -122,6 +129,19 @@ export function ARView({
     controllerRef.current?.stop();
     requestAnimationFrame(() => onExitRef.current());
   };
+
+  if (!compassAvailable) {
+    return (
+      <section className="ar-view" data-status="no-compass">
+        <div className="ar-qr-panel">
+          <QrPrompt />
+          <button type="button" className="primary" onClick={exitAR}>
+            Back to results
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section ref={sectionRef} className="ar-view" data-status={status}>

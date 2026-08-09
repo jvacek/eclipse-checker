@@ -45,6 +45,31 @@ export function compassHeading(
   return normalizeDeg(360 - (alphaDeg + screenAngleDeg));
 }
 
+/**
+ * Whether the current device can report a compass heading. Desktops and many
+ * laptops expose the `DeviceOrientationEvent` constructor but never deliver a
+ * usable absolute heading (no magnetometer), so the API's existence alone is
+ * not enough — gate on coarse-pointer/touch too.
+ */
+export function isCompassAvailable(win: Window = window): boolean {
+  const hasApi = 'DeviceOrientationEvent' in win || 'DeviceMotionEvent' in win;
+  if (!hasApi) {
+    return false;
+  }
+  const nav = win.navigator;
+  if (nav?.maxTouchPoints !== undefined && nav.maxTouchPoints > 0) {
+    return true;
+  }
+  try {
+    if (win.matchMedia?.('(pointer: coarse)').matches) {
+      return true;
+    }
+  } catch {
+    // fall through
+  }
+  return false;
+}
+
 type OrientationPermissionApi = () => Promise<string>;
 
 /**

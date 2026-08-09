@@ -244,6 +244,20 @@ export default function App() {
             }}
           />
         )}
+
+        {phase.kind !== 'ar' && (
+          <footer className="app-footer">
+            <a href="https://github.com/jvacek/eclipse-checker" target="_blank" rel="noreferrer">
+              View source on GitHub
+            </a>
+            <span className="app-footer-sep" aria-hidden="true">
+              ·
+            </span>
+            <a href="https://ko-fi.com/jvacek" target="_blank" rel="noreferrer">
+              Buy me a coffee on Ko-fi
+            </a>
+          </footer>
+        )}
       </main>
       <Analytics />
     </>

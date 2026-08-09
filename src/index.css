@@ -31,6 +31,28 @@ h1 {
   color: #9aa3b2;
 }
 
+.app-footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid #2a3240;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.app-footer a {
+  color: #9aa3b2;
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  color: #3b82f6;
+}
+
+.app-footer-sep {
+  margin: 0 0.5rem;
+  color: #4a5568;
+}
+
 button {
   font: inherit;
 }

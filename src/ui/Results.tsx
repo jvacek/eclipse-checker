@@ -41,8 +41,19 @@ export function Results({
         <h2>
           {view.kind} eclipse — {view.eclipseDateIso} ({view.timezone})
         </h2>
-        <button type="button" className="link" onClick={onRestart}>
-          Start over
+        <button
+          type="button"
+          className="restart"
+          onClick={onRestart}
+          aria-label="Start over"
+          title="Start over"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path
+              d="M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z"
+              fill="currentColor"
+            />
+          </svg>
         </button>
       </div>
 
@@ -89,15 +100,29 @@ export function Results({
         <p className="location-note">Location accuracy ±{Math.round(locationAccuracyMeters)} m</p>
       )}
 
-      <button type="button" className="primary" onClick={() => void share()}>
-        Share
-      </button>
+      <div className="results-actions">
+        {onViewAr !== undefined && (
+          <button type="button" className="ar-primary" onClick={onViewAr}>
+            View in AR
+          </button>
+        )}
 
-      {onViewAr !== undefined && (
-        <button type="button" className="secondary" onClick={onViewAr}>
-          View in AR
+        <button
+          type="button"
+          className="share"
+          aria-label="Share this eclipse"
+          title="Share this eclipse"
+          onClick={() => void share()}
+        >
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path
+              d="M18 16.1c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11A2.99 2.99 0 0 0 21 5a3 3 0 1 0-5.91 1.2L8.04 10.3A2.98 2.98 0 0 0 3 12a3 3 0 0 0 5.04 2.11l7.12 4.16A2.98 2.98 0 0 0 18 21a3 3 0 1 0 0-4.9z"
+              fill="currentColor"
+            />
+          </svg>
+          <span>Share</span>
         </button>
-      )}
+      </div>
     </section>
   );
 }

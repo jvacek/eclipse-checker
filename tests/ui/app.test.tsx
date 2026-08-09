@@ -89,7 +89,7 @@ describe('App manual flow', () => {
 
     expect(screen.getByRole('heading', { name: /eclipse —/ })).toBeInTheDocument();
     expect(screen.getByText('Peak')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Share' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /share/i })).toBeInTheDocument();
   });
 
   it('rejects invalid coordinates with a message', async () => {

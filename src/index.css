@@ -68,6 +68,23 @@ button.link {
   padding: 0.25rem;
 }
 
+.results-head .restart {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem;
+  border-radius: 6px;
+  border: 1px solid #2c3342;
+  cursor: pointer;
+  background: #1f2633;
+  color: #9aa3b2;
+}
+
+.results-head .restart:hover {
+  color: #e6e8ee;
+  border-color: #3b4a63;
+}
+
 .landing-lead {
   color: #9aa3b2;
   line-height: 1.5;
@@ -174,8 +191,46 @@ button.link {
   margin: 0;
 }
 
-.results .primary {
+.results-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
   margin-top: 1rem;
+}
+
+.results-actions .ar-primary {
+  padding: 0.9rem 1rem;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  background: #22c55e;
+  color: #04120a;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.results-actions .ar-primary:hover {
+  background: #27d966;
+}
+
+.results-actions .share {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: transparent;
+  color: #9aa3b2;
+  font-size: 0.95rem;
+}
+
+.results-actions .share:hover {
+  color: #cbd5e1;
+  background: #1f2633;
 }
 
 .location-note {

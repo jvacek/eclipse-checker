@@ -26,8 +26,16 @@ import {
 
 export const SUN_DISTANCE = 30;
 
-/** The true sun (~0.26° radius) is ~10px on a phone screen; exaggerate for visibility. */
-export const MIN_SUN_DISPLAY_DEG = 3;
+/**
+ * The true sun (~0.26° radius) is ~10px on a phone screen — too small to aim
+ * at comfortably. Keep a modest display floor (2× the true size instead of the
+ * old 12×) and let the concentric reticle rings carry the findability.
+ */
+export const MIN_SUN_DISPLAY_DEG = 0.5;
+
+/** Finder rings around the sun disc; radii as multiples of the display radius. */
+export const RETICLE_RING_MULTIPLIERS = [2, 4, 6] as const;
+export const RETICLE_OUTER_MULTIPLIER = RETICLE_RING_MULTIPLIERS[RETICLE_RING_MULTIPLIERS.length - 1];
 
 export interface SunSceneParams {
   azimuthDeg: number;
@@ -54,6 +62,8 @@ export interface SkyOverlay {
   root: Group;
   sun: Group;
   crescent: Mesh<PlaneGeometry, ShaderMaterial>;
+  /** Concentric finder rings (scope reticle) around the sun disc. */
+  reticle: LineLoop[];
   horizon: LineLoop;
   grid: LineLoop[];
   bearings: Group;
@@ -93,6 +103,10 @@ export function createSkyOverlay(scene: Scene): SkyOverlay {
   sun.name = 'sun';
   const crescent = new Mesh(new PlaneGeometry(2, 2), createCrescentMaterial());
   sun.add(crescent);
+  const reticle = buildReticle();
+  for (const ring of reticle) {
+    sun.add(ring);
+  }
   root.add(sun);
 
   const horizon = buildHorizonRing();
@@ -116,6 +130,7 @@ export function createSkyOverlay(scene: Scene): SkyOverlay {
     root,
     sun,
     crescent,
+    reticle,
     horizon,
     grid,
     bearings,
@@ -123,6 +138,10 @@ export function createSkyOverlay(scene: Scene): SkyOverlay {
     beam,
     dispose: () => {
       disposeGeometry(crescent.geometry);
+      reticle.forEach((ring) => {
+        disposeGeometry(ring.geometry);
+        (ring.material as LineBasicMaterial).dispose();
+      });
       disposeGeometry(horizon.geometry);
       grid.forEach((ring) => disposeGeometry(ring.geometry));
       bearings.traverse((obj) => {
@@ -153,6 +172,9 @@ export function setupSkyOverlay(overlay: SkyOverlay, params: SunSceneParams): vo
   const displayDeg = Math.max(params.rSunDeg, MIN_SUN_DISPLAY_DEG);
   const worldRadius = SUN_DISTANCE * Math.tan(displayDeg * DEG_TO_RAD);
   overlay.crescent.scale.setScalar(Math.max(worldRadius, 1e-6) * GLOW_EXTENT);
+  overlay.reticle.forEach((ring, i) => {
+    ring.scale.setScalar(Math.max(worldRadius, 1e-6) * RETICLE_RING_MULTIPLIERS[i]);
+  });
 
   applyEclipseDiscGeometry(
     overlay.crescent.material,
@@ -185,6 +207,41 @@ export function placeSkySun(overlay: SkyOverlay, params: SunSceneParams): void {
   overlay.sun.quaternion.set(orientation[0], orientation[1], orientation[2], orientation[3]);
 
   placeSunBeam(overlay.beam, overlay.sun.position, placedAzimuth);
+}
+
+const RETICLE_COLOR = 0xffffff;
+
+/**
+ * Concentric finder rings around the sun disc — a scope reticle. Each is a
+ * unit-radius circle in the disc's own plane (z = 0), scaled to a multiple of
+ * the display radius in `setupSkyOverlay`. They share the sun group's
+ * position and world-anchored orientation, so they stay centered on the disc
+ * as the phone rotates.
+ */
+function buildReticle(): LineLoop[] {
+  const rings: LineLoop[] = [];
+  for (let ring = 0; ring < RETICLE_RING_MULTIPLIERS.length; ring += 1) {
+    const geometry = new BufferGeometry();
+    const positions: number[] = [];
+    const segments = 64;
+    for (let i = 0; i < segments; i += 1) {
+      const angle = (i / segments) * Math.PI * 2;
+      positions.push(Math.cos(angle), Math.sin(angle), 0);
+    }
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    rings.push(
+      new LineLoop(
+        geometry,
+        new LineBasicMaterial({
+          color: RETICLE_COLOR,
+          transparent: true,
+          opacity: ring === 0 ? 0.45 : 0.3,
+          depthWrite: false,
+        }),
+      ),
+    );
+  }
+  return rings;
 }
 
 function buildHorizonRing(): LineLoop {

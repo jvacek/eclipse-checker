@@ -20,6 +20,7 @@ import {
   placeSkySun,
   setupSkyOverlay,
   MIN_SUN_DISPLAY_DEG,
+  RETICLE_OUTER_MULTIPLIER,
   type SkyOverlay,
 } from './scene';
 
@@ -387,7 +388,10 @@ export function createARController(options: ARControllerOptions): ARController {
           fov,
           aspect,
           0.12,
-          Math.max(params.rSunDeg, MIN_SUN_DISPLAY_DEG),
+          // Keep the arrow until the outermost reticle ring clears the viewport
+          // edge — the disc itself is small now, but the finder rings extend
+          // several radii beyond it.
+          Math.max(params.rSunDeg, MIN_SUN_DISPLAY_DEG) * RETICLE_OUTER_MULTIPLIER,
         );
         if (indicator === null) {
           arrow.hidden = true;

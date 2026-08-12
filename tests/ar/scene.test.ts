@@ -7,6 +7,7 @@ import {
   setupSkyOverlay,
   SUN_DISTANCE,
   MIN_SUN_DISPLAY_DEG,
+  RETICLE_RING_MULTIPLIERS,
   type SkyOverlay,
 } from '../../src/ar/scene';
 import { GLOW_EXTENT } from '../../src/ar/crescentShader';
@@ -45,6 +46,19 @@ describe('createSkyOverlay', () => {
     expect(ticks).toBeInstanceOf(LineSegments);
     for (const name of ['bearing-N', 'bearing-E', 'bearing-S', 'bearing-W']) {
       expect(overlay.bearings.getObjectByName(name)).toBeTruthy();
+    }
+    overlay.dispose();
+  });
+
+  it('builds concentric reticle rings around the sun disc', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    expect(overlay.reticle).toHaveLength(RETICLE_RING_MULTIPLIERS.length);
+    // The rings hang under the sun group, concentric with the crescent mesh at
+    // its local origin, so they inherit its position and world-anchored quaternion.
+    for (const ring of overlay.reticle) {
+      expect(overlay.sun.children).toContain(ring);
+      expect(ring.position.length()).toBeCloseTo(0, 6);
     }
     overlay.dispose();
   });
@@ -176,6 +190,19 @@ describe('placeSkySun', () => {
       SUN_DISTANCE * Math.tan(6 * (Math.PI / 180)) * GLOW_EXTENT,
       6,
     );
+    overlay.dispose();
+  });
+
+  it('scales the reticle rings to multiples of the display radius', () => {
+    const scene = new Scene();
+    const overlay = createSkyOverlay(scene);
+    const displayDeg = Math.max(0.26, MIN_SUN_DISPLAY_DEG);
+    const worldRadius = SUN_DISTANCE * Math.tan(displayDeg * (Math.PI / 180));
+    setupSkyOverlay(overlay, makeParams({ rSunDeg: 0.26 }));
+    overlay.reticle.forEach((ring, i) => {
+      expect(ring.scale.x).toBeCloseTo(worldRadius * RETICLE_RING_MULTIPLIERS[i], 6);
+      expect(ring.scale.x).toBeCloseTo(ring.scale.y, 6);
+    });
     overlay.dispose();
   });
 });

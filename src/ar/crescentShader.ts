@@ -25,25 +25,27 @@ void main() {
   // fwidth is WebGL2-only; the 8th Wall AR engine always runs on WebGL2.
   float aa = fwidth(dSun) * 1.5;   // screen-space AA: crisp at any size
 
-  // halo: wide soft glow + a corona ring hugging the limb
-  float glow = exp(-max(dSun - 1.0, 0.0) * 6.0) * 0.5;
-  float corona = exp(-abs(dSun - 1.0) * 9.0) * 0.45 * (0.5 + 0.5 * uObscuration);
+  // A near-white photosphere with limb darkening (the real sun is white-hot,
+  // dimming to amber only at the extreme edge) reads as an actual eclipse
+  // rather than a cartoon orange disc. The subtle warm halo keeps the disc
+  // bright against a blue sky without washing out the crescent.
+  float limb = smoothstep(1.0, 0.5, dSun);
+  vec3 sunColor = mix(vec3(1.0, 0.82, 0.52), vec3(1.0, 0.995, 0.94), limb);
+  vec3 moonColor = vec3(0.03, 0.03, 0.08);
 
   float dMoon = length(p - uMoonOffset);
   float eclipsed = 1.0 - smoothstep(uMoonRadius - aa, uMoonRadius + aa, dMoon);
-
-  // limb-darkened photosphere: warm orange limb -> near-white core
-  float limb = smoothstep(1.0, 0.55, dSun);
-  vec3 sunColor = mix(vec3(1.0, 0.62, 0.25), vec3(1.0, 0.97, 0.86), limb);
-  vec3 moonColor = vec3(0.03, 0.03, 0.08);
   vec3 disc = mix(sunColor, moonColor, eclipsed);
 
+  // The corona is only real while the photosphere is almost fully covered:
+  // gate it on obscuration so a partial eclipse doesn't glow like a cartoon.
+  float corona = exp(-abs(dSun - 1.0) * 7.0) * 0.5 * smoothstep(0.82, 0.98, uObscuration);
+
   float discAlpha = 1.0 - smoothstep(1.0 - aa, 1.0 + aa, dSun);
-  float glowAmt = glow + corona;
-  vec3 glowColor = vec3(1.0, 0.75, 0.45);
+  vec3 glowColor = vec3(1.0, 0.95, 0.85);
   // straight-alpha composite of disc over glow
-  vec3 color = (disc * discAlpha + glowColor * glowAmt) / max(discAlpha + glowAmt, 1e-4);
-  float alpha = clamp(discAlpha + glowAmt, 0.0, 1.0);
+  vec3 color = (disc * discAlpha + glowColor * corona) / max(discAlpha + corona, 1e-4);
+  float alpha = clamp(discAlpha + corona, 0.0, 1.0);
   gl_FragColor = vec4(color, alpha);
 }
 `;

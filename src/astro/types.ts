@@ -27,6 +27,17 @@ export interface EclipseSample {
   obscuration: number;
 }
 
+export interface UpcomingEclipse {
+  /** UTC calendar date (YYYY-MM-DD) of the eclipse's peak. */
+  date: string;
+  kind: EclipseKind;
+  /** Geographic coordinates of greatest eclipse — total/annular eclipses only. */
+  latitude?: number;
+  longitude?: number;
+  /** Fraction (0,1] of the Sun's disc obscured at greatest eclipse — total/annular only. */
+  obscuration?: number;
+}
+
 export interface EclipseView {
   kind: EclipseKind;
   eclipseDateIso: string;

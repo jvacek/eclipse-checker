@@ -36,3 +36,10 @@ export function parseCoordinate(input: string): number | null {
   const magnitude = Math.abs(degrees) + minutes / 60 + seconds / 3600;
   return negative || degrees < 0 ? -magnitude : magnitude;
 }
+
+/** Formats a latitude/longitude pair as "65.2°N, 25.2°W" (decimal degrees). */
+export function formatLatLon(lat: number, lon: number, precision = 1): string {
+  const ns = lat >= 0 ? 'N' : 'S';
+  const ew = lon >= 0 ? 'E' : 'W';
+  return `${Math.abs(lat).toFixed(precision)}°${ns}, ${Math.abs(lon).toFixed(precision)}°${ew}`;
+}

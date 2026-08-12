@@ -5,6 +5,7 @@ import { EclipseCalculator } from '../../src/astro/eclipse';
 import type { ObserverLocation } from '../../src/astro/types';
 import fixture from '../fixtures/2026-08-12-nasa.json';
 import annularFixture from '../fixtures/2027-02-06-annular.json';
+import upcomingFixture from '../fixtures/upcoming-eclipses.json';
 
 const REF_DATE = new Date('2026-08-11T00:00:00Z');
 
@@ -263,6 +264,62 @@ describe('EclipseCalculator.forEclipseDate — 2027-02-06 annular fixture', () =
     expect(view).not.toBeNull();
     if (view === null) return;
     expect(view.obscuration).toBeLessThan(1);
+  });
+});
+
+describe('EclipseCalculator.upcomingEclipses', () => {
+  it('matches the NASA decade table for dates and kinds', () => {
+    const upcoming = EclipseCalculator.upcomingEclipses({
+      refDate: new Date(upcomingFixture.referenceDate),
+      count: upcomingFixture.eclipses.length,
+    });
+    expect(upcoming.map((e) => ({ date: e.date, kind: e.kind }))).toEqual(
+      upcomingFixture.eclipses.map(({ date, kind }) => ({ date, kind })),
+    );
+  });
+
+  it('reports greatest-eclipse coordinates and obscuration for total/annular only', () => {
+    const upcoming = EclipseCalculator.upcomingEclipses({
+      refDate: new Date(upcomingFixture.referenceDate),
+      count: upcomingFixture.eclipses.length,
+    });
+    for (let i = 0; i < upcoming.length; i += 1) {
+      const ours = upcoming[i];
+      const expected = upcomingFixture.eclipses[i];
+      if (expected.latitude !== undefined && expected.longitude !== undefined) {
+        expect(Math.abs(ours.latitude! - expected.latitude)).toBeLessThanOrEqual(
+          upcomingFixture.tolerances.coordinateDeg,
+        );
+        expect(Math.abs(ours.longitude! - expected.longitude)).toBeLessThanOrEqual(
+          upcomingFixture.tolerances.coordinateDeg,
+        );
+        expect(ours.obscuration).not.toBeUndefined();
+        expect(Math.abs(ours.obscuration! - expected.obscuration!)).toBeLessThanOrEqual(
+          upcomingFixture.tolerances.obscuration,
+        );
+      } else {
+        expect(ours.latitude).toBeUndefined();
+        expect(ours.longitude).toBeUndefined();
+        expect(ours.obscuration).toBeUndefined();
+      }
+    }
+  });
+
+  it('skips an eclipse whose peak has already passed and honours count', () => {
+    const ref = new Date('2026-08-12T23:00:00Z'); // after the 2026-08-12 peak
+    const upcoming = EclipseCalculator.upcomingEclipses({ refDate: ref, count: 2 });
+    expect(upcoming).toHaveLength(2);
+    expect(upcoming[0].date).toBe('2027-02-06');
+    expect(upcoming[0].kind).toBe('Annular');
+    expect(upcoming[1].date).toBe('2027-08-02');
+  });
+
+  it('returns an empty list for a zero count', () => {
+    const upcoming = EclipseCalculator.upcomingEclipses({
+      refDate: REF_DATE,
+      count: 0,
+    });
+    expect(upcoming).toEqual([]);
   });
 });
 

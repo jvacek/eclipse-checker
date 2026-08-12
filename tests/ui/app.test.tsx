@@ -42,9 +42,13 @@ describe('App landing', () => {
   it('renders both entry points', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: 'Find my location' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Enter coordinates manually' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Enter coordinates manually' })).toBeInTheDocument();
+  });
+
+  it('lists the next upcoming solar eclipses', () => {
+    render(<App />);
+    expect(screen.getByRole('heading', { name: 'Upcoming solar eclipses' })).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(6);
   });
 
   it('deep-links straight to results from a share URL', () => {

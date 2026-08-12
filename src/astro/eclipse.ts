@@ -1,7 +1,9 @@
 import {
   Body,
   MakeTime,
+  NextGlobalSolarEclipse,
   Observer,
+  SearchGlobalSolarEclipse,
   SearchLocalSolarEclipse,
   type AstroTime,
   type EclipseEvent,
@@ -27,10 +29,12 @@ import type {
   EclipseSample,
   EclipseView,
   ObserverLocation,
+  UpcomingEclipse,
 } from './types';
 
 const SECONDS_PER_DAY = 86400;
 const DEFAULT_SEARCH_HORIZON_DAYS = 3650;
+const DEFAULT_UPCOMING_COUNT = 6;
 const J2000_UNIX_OFFSET_SECONDS = 946728000;
 const PRE_ECLIPSE_SEARCH_LEAD_DAYS = 1.5;
 
@@ -45,6 +49,11 @@ export interface EclipseCalculationOptions {
   timezone?: string;
   refraction?: RefractionOption;
   searchHorizonDays?: number;
+}
+
+export interface UpcomingEclipseOptions {
+  refDate?: FlexibleDateTime;
+  count?: number;
 }
 
 interface ResolvedOptions {
@@ -91,6 +100,38 @@ export const EclipseCalculator = {
       return null;
     }
     return buildView(info, location, observer, opts, true);
+  },
+
+  // Enumerates the next `count` solar eclipses visible anywhere on Earth (not
+  // location-specific), starting from the first one after `refDate`. Powers the
+  // front-page "Upcoming solar eclipses" list, which has no location yet.
+  upcomingEclipses(options: UpcomingEclipseOptions = {}): UpcomingEclipse[] {
+    const refDate = options.refDate ?? new Date();
+    const count = Math.max(0, options.count ?? DEFAULT_UPCOMING_COUNT);
+    const list: UpcomingEclipse[] = [];
+    const refUt = MakeTime(refDate).ut;
+    let info = SearchGlobalSolarEclipse(refDate);
+    // An eclipse that peaked before (or is peaking just at) the reference date is
+    // not "upcoming" — advance to the following one.
+    if (info.peak.ut < refUt) {
+      info = NextGlobalSolarEclipse(info.peak);
+    }
+    while (list.length < count) {
+      const eclipse: UpcomingEclipse = {
+        date: formatUtcIso(info.peak).slice(0, 10),
+        kind: KIND_MAP[info.kind] ?? 'Partial',
+      };
+      if (info.latitude !== undefined && info.longitude !== undefined) {
+        eclipse.latitude = info.latitude;
+        eclipse.longitude = info.longitude;
+      }
+      if (info.obscuration !== undefined) {
+        eclipse.obscuration = info.obscuration;
+      }
+      list.push(eclipse);
+      info = NextGlobalSolarEclipse(info.peak);
+    }
+    return list;
   },
 
   // @todo Not currently surfaced in the UI; kept as the scrubber primitive for

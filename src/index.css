@@ -189,6 +189,72 @@ button.link {
   align-self: center;
 }
 
+.upcoming {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #2a3240;
+  text-align: left;
+}
+
+.upcoming-title {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+}
+
+.upcoming-note {
+  margin: 0 0 0.9rem;
+  color: #9aa3b2;
+  font-size: 0.9rem;
+}
+
+.upcoming-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.upcoming-item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.6rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #2c3342;
+  border-radius: 8px;
+  background: #10141d;
+}
+
+.upcoming-kind {
+  min-width: 3.4rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.upcoming-kind[data-kind='total'] {
+  color: #f87171;
+}
+
+.upcoming-kind[data-kind='annular'] {
+  color: #fbbf24;
+}
+
+.upcoming-kind[data-kind='partial'] {
+  color: #6ea8fe;
+}
+
+.upcoming-date {
+  font-weight: 600;
+}
+
+.upcoming-place {
+  color: #9aa3b2;
+  font-size: 0.85rem;
+  margin-left: auto;
+}
+
 .form {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

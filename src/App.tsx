@@ -80,6 +80,10 @@ const DENIAL_NOTICE: Record<string, string> = {
 
 const geolocationRequestor = createGeolocationRequestor();
 
+// Computed once per page load: the landing list doesn't change during a session,
+// and re-running the eclipse searches on every phase transition would be wasteful.
+const UPCOMING_ECLIPSES = EclipseCalculator.upcomingEclipses({ refDate: new Date(), count: 6 });
+
 function shareUrlFor(view: EclipseView): string {
   return buildShareUrl(window.location.href, {
     lat: view.observer.lat,
@@ -163,6 +167,7 @@ export default function App() {
         {phase.kind === 'landing' && (
           <Landing
             locating={geolocation.pending}
+            upcoming={UPCOMING_ECLIPSES}
             onLocate={() => void locate()}
             onManual={() => setPhase({ kind: 'manual' })}
           />

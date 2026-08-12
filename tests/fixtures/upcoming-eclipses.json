@@ -1,0 +1,59 @@
+{
+  "source": [
+    "NASA solar eclipse decade table 2021–2030: https://eclipse.gsfc.nasa.gov/SEdecade/SEdecade2021.html",
+    "Greatest-eclipse coordinates cross-checked against NASA Besselian element pages (e.g. https://eclipse.gsfc.nasa.gov/SEsearch/SEdata.php?Ecl=20260812)."
+  ],
+  "attribution": "Eclipse Predictions by Fred Espenak, NASA's GSFC",
+  "referenceDate": "2026-08-11T00:00:00Z",
+  "notes": [
+    "Dates are the UTC calendar date of the instant of greatest eclipse.",
+    "Kinds match NASA's decade table: 2026-08-12 total, 2027-02-06 annular, 2027-08-02 total, 2028-01-26 annular, 2028-07-22 total, 2029-01-14 partial.",
+    "Latitude/longitude are the greatest-eclipse coordinates (total/annular only; undefined for partials). astronomy-engine values agree with NASA within ~0.1°.",
+    "Obscuration is astronomy-engine's greatest-eclipse value (total/annular only); NASA's decade table does not publish obscuration, so this is asserted for self-consistency (it must be 1 for total, <1 for annular)."
+  ],
+  "tolerances": {
+    "coordinateDeg": 0.5,
+    "obscuration": 0.01
+  },
+  "eclipses": [
+    {
+      "date": "2026-08-12",
+      "kind": "Total",
+      "latitude": 65.2,
+      "longitude": -25.2,
+      "obscuration": 1.0
+    },
+    {
+      "date": "2027-02-06",
+      "kind": "Annular",
+      "latitude": -31.3,
+      "longitude": -48.5,
+      "obscuration": 0.861
+    },
+    {
+      "date": "2027-08-02",
+      "kind": "Total",
+      "latitude": 25.5,
+      "longitude": 33.2,
+      "obscuration": 1.0
+    },
+    {
+      "date": "2028-01-26",
+      "kind": "Annular",
+      "latitude": 3.0,
+      "longitude": -51.5,
+      "obscuration": 0.848
+    },
+    {
+      "date": "2028-07-22",
+      "kind": "Total",
+      "latitude": -15.6,
+      "longitude": 126.7,
+      "obscuration": 1.0
+    },
+    {
+      "date": "2029-01-14",
+      "kind": "Partial"
+    }
+  ]
+}
